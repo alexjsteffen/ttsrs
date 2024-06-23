@@ -1,203 +1,235 @@
-#[macro_use]
-extern crate serde_derive;
-extern crate reqwest;
-extern crate tokio;
-extern crate clap;
-extern crate tokio_stream;
-
-use std::env;
+use anyhow::{Context, Result};
+use chrono::Local;
+use clap::Parser;
+use futures::stream::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
+use reqwest::Client;
+use serde::Deserialize;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Command, Stdio};
-use std::thread;
-use std::time::{Duration, SystemTime};
+use std::io::Write;
 use std::path::Path;
-use clap::{Arg, App};
-use tokio::sync::mpsc;
-use tokio::time::timeout;
+use std::process::Command;
+use tiktoken_rs::cl100k_base;
 
-#[derive(Serialize, Deserialize)]
-struct TTSResponse {
-    url: String,
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Input text file name
+    input_file: String,
+
+    /// TTS model to use
+    #[arg(short, long, default_value = "tts-1-hd")]
+    model: String,
+
+    /// Voice to use for TTS
+    #[arg(short, long, default_value = "fable")]
+    voice: String,
 }
 
-async fn generate_audio_files(chunks: Vec<Vec<String>>, output_dir: &str, model: &str, voice: &str, api_key: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let client = reqwest::Client::new();
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)?
-        .as_secs()
-        .to_string();
-    
-    for (i, chunk) in chunks.iter().enumerate() {
-        let chunk_string = chunk.join(" ");
-        if chunk_string.len() > 4000 {
-            println!("Chunk {} is more than 4000 characters, please make it shorter", i + 1);
-            std::process::exit(1);
-        }
+#[derive(Deserialize)]
+struct OpenAIResponse {
+    error: Option<OpenAIError>,
+}
 
-        let (sx, rx) = mpsc::channel(1);
-        thread::spawn(move || start_animation(rx));
+#[derive(Deserialize)]
+struct OpenAIError {
+    message: String,
+}
 
-        let response = client.post("https://api.openai.com/v1/audio/speech")
-            .header("Authorization", format!("Bearer {}", api_key))
-            .json(&serde_json::json!({ "model": model, "voice": voice, "response_format": "flac", "input": chunk_string }))
-            .send()
-            .await?
-            .json::<TTSResponse>()
-            .await?;
-        
-        sx.send(true).unwrap();
+#[tokio::main]
+async fn main() -> Result<()> {
+    let args = Args::parse();
 
-        // Download the returned audio file
-        let response_bytes = client
-            .get(&response.url)
-            .send()
-            .await?
-            .bytes()
-            .await?;
-        
-        let file_path = format!("{}/tmp_{}_chunk{:06}.flac", output_dir, now, i + 1);
-        let mut file = File::create(file_path)?;
-        file.write_all(&response_bytes)?;
+    let api_key = std::env::var("OPENAI_API_KEY").context("OPENAI_API_KEY not set")?;
+    let client = Client::new();
 
-        println!("A flac file saved as {}/tmp_{}_chunk{:06}.flac", output_dir, now, i + 1);
-    }
+    let input_file_path = Path::new(&args.input_file);
+    let input_file_name = input_file_path
+        .file_stem()
+        .context("Invalid input file")?
+        .to_str()
+        .context("Invalid input file name")?;
+
+    println!(
+        "Now creating a folder called {} for you.",
+        green_text(input_file_name)
+    );
+    let output_dir = Path::new("./").join(input_file_name);
+    fs::create_dir_all(&output_dir)?;
+
+    let lines = read_text_file(input_file_path)?;
+    let chunks = chunk_text(&lines);
+
+    generate_audio_files(&chunks, &output_dir, &args.model, &args.voice, &client, &api_key).await?;
+
+    println!(
+        "Chunk flac files are already in [ ./{} ] for ffmpeg to combine.\n\n",
+        green_text(input_file_name)
+    );
+
+    combine_audio_files(input_file_path, &output_dir)?;
+    remove_tmp(&output_dir)?;
+
+    println!(
+        "\nThe File [ {} ] is ready for you. \n",
+        green_text(input_file_name)
+    );
 
     Ok(())
-}
-
-fn start_animation(rx: mpsc::Receiver<bool>) {
-    let braille_chars = ["⡿", "⣟", "⣯", "⣷", "⣾", "⣽", "⣻", "⢿"];
-    let mut i = 0;
-    loop {
-        if let Ok(true) = timeout(Duration::from_millis(100), rx.recv()).await {
-            break;
-        }
-        print!("\r{}", braille_chars[i % braille_chars.len()]);
-        thread::sleep(Duration::from_millis(100));
-        i += 1;
-    }
-    println!("\nDone");
 }
 
 fn green_text(text: &str) -> String {
     format!("\x1b[92m{}\x1b[0m", text)
 }
 
-fn read_text_file(file_path: &str) -> Vec<String> {
-    BufReader::new(File::open(file_path).unwrap())
-        .lines()
-        .filter_map(Result::ok)
-        .collect()
+fn read_text_file(file_path: &Path) -> Result<Vec<String>> {
+    let content = fs::read_to_string(file_path)?;
+    Ok(content.lines().filter(|line| !line.trim().is_empty()).map(String::from).collect())
 }
 
 fn chunk_text(lines: &[String]) -> Vec<Vec<String>> {
-    // Mock function for encoding length calculation.
-    // Replace this with actual tokenization calculation. 
-    let encoding_fn = |line: &str| -> usize { line.len() };
-
-    let mut chunks = vec![];
-    let mut current_chunk = vec![];
+    let bpe = cl100k_base().unwrap();
+    let mut chunks = Vec::new();
+    let mut current_chunk = Vec::new();
     let mut current_token_count = 0;
 
     for line in lines {
-        let line_token_count = encoding_fn(line);
+        let line_token_count = bpe.encode_ordinary(line).len();
 
         if current_token_count + line_token_count > 500 {
-            chunks.push(current_chunk);
-            current_chunk = vec![];
+            chunks.push(std::mem::take(&mut current_chunk));
             current_token_count = 0;
         }
 
-        current_chunk.push(line.to_string());
+        current_chunk.push(line.clone());
         current_token_count += line_token_count;
     }
 
-    chunks.push(current_chunk);
+    if !current_chunk.is_empty() {
+        chunks.push(current_chunk);
+    }
+
     chunks
 }
 
-fn find_ffmpeg_path() -> Option<String> {
-    let output = Command::new("which")
-        .arg("ffmpeg")
-        .output()
-        .expect("Failed to execute `which ffmpeg` command!");
-    
-    if output.status.success() {
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if Path::new(&path).exists() {
-            return Some(path);
+async fn generate_audio_files(
+    chunks: &[Vec<String>],
+    output_dir: &Path,
+    model: &str,
+    voice: &str,
+    client: &Client,
+    api_key: &str,
+) -> Result<()> {
+    let date_time_string = Local::now().format("%Y%m%d%H%M").to_string();
+
+    for (i, chunk) in chunks.iter().enumerate() {
+        let chunk_string = chunk.join(" ");
+        println!("〰️〰️〰️〰️〰️〰️");
+        println!(
+            "{} {} of {}",
+            green_text("Prepare for the chunk"),
+            format!("{:06}", i + 1),
+            chunks.len()
+        );
+        println!("Input String: {}...", &chunk_string[..chunk_string.len().min(60)]);
+
+        if chunk_string.len() > 4000 {
+            anyhow::bail!(
+                "Chunk {:06}: {} is more than 4000 characters, please make it shorter",
+                i + 1,
+                &chunk_string[..60]
+            );
         }
+
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+                .template("{spinner:.green} {msg}")?,
+        );
+        pb.set_message("Generating audio...");
+
+        let response = client
+            .post("https://api.openai.com/v1/audio/speech")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .json(&serde_json::json!({
+                "model": model,
+                "voice": voice,
+                "input": chunk_string,
+            }))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error: OpenAIResponse = response.json().await?;
+            if let Some(error) = error.error {
+                anyhow::bail!("OpenAI API error: {}", error.message);
+            } else {
+                anyhow::bail!("Unknown OpenAI API error");
+            }
+        }
+
+        let file_name = format!("tmp_{}_chunk{:06}.flac", date_time_string, i + 1);
+        let file_path = output_dir.join(&file_name);
+        let mut file = File::create(&file_path)?;
+
+        let mut stream = response.bytes_stream();
+        while let Some(item) = stream.next().await {
+            file.write_all(&item?)?;
+        }
+
+        pb.finish_with_message(format!("Audio file saved as {}", file_path.display()));
     }
-    None
+
+    Ok(())
 }
 
-fn combine_audio_files(input_file_path: &str, output_dir: &str) {
-    let ffmpeg_path = find_ffmpeg_path().expect("FFmpeg executable not found in system PATH");
-    let input_file_name = input_file_path.rsplit('.').nth(1).unwrap();
-    let flac_files: Vec<_> = fs::read_dir(output_dir)
-        .unwrap()
-        .filter_map(Result::ok)
-        .filter(|f| f.file_name().to_str().unwrap().ends_with(".flac"))
+fn combine_audio_files(input_file_path: &Path, output_dir: &Path) -> Result<()> {
+    let input_file_name = input_file_path.file_stem().context("Invalid input file")?.to_str().context("Invalid input file name")?;
+    let flac_files: Vec<_> = fs::read_dir(output_dir)?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.extension()? == "flac" {
+                Some(path)
+            } else {
+                None
+            }
+        })
         .collect();
 
-    let concat_file_path = format!("{}/concat.txt", output_dir);
-    let mut concat_file = File::create(&concat_file_path).unwrap();
-    for flac_file in flac_files {
-        writeln!(concat_file, "file '{}'", flac_file.path().display()).unwrap();
+    let concat_file_path = output_dir.join("concat.txt");
+    let mut concat_file = File::create(&concat_file_path)?;
+    for flac_file in &flac_files {
+        writeln!(concat_file, "file '{}'", flac_file.file_name().unwrap().to_str().unwrap())?;
     }
 
-    let output_file_path = format!("{}/{}.flac", output_dir, input_file_name);
-    Command::new(ffmpeg_path)
-        .arg("-f")
-        .arg("concat")
-        .arg("-safe")
-        .arg("0")
-        .arg("-i")
-        .arg(&concat_file_path)
-        .arg("-c")
-        .arg("copy")
-        .arg(&output_file_path)
-        .status()
-        .expect("Failed to execute ffmpeg");
+    let output_file_path = output_dir.join(format!("{}.flac", input_file_name));
+    let status = Command::new("ffmpeg")
+        .args(&[
+            "-f", "concat",
+            "-safe", "0",
+            "-i", concat_file_path.to_str().unwrap(),
+            "-c", "flac",
+            output_file_path.to_str().unwrap(),
+        ])
+        .status()?;
+
+    if !status.success() {
+        anyhow::bail!("ffmpeg command failed");
+    }
+
+    Ok(())
 }
 
-fn remove_tmp_files(output_dir: &str) {
-    for entry in fs::read_dir(output_dir).unwrap() {
-        let entry = entry.unwrap();
-        if entry.file_name().to_str().unwrap().starts_with("tmp") || entry.file_name().to_str().unwrap() == "concat.txt" {
-            fs::remove_file(entry.path()).unwrap();
+fn remove_tmp(output_dir: &Path) -> Result<()> {
+    for entry in fs::read_dir(output_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.file_name().unwrap().to_str().unwrap().starts_with("tmp") {
+            fs::remove_file(path)?;
         }
     }
-}
-
-#[tokio::main]
-async fn main() {
-    let matches = App::new("Generate audio files from text using OpenAI TTS.")
-        .arg(Arg::with_name("input_file").help("Input text file name").required(true))
-        .arg(Arg::with_name("model").short("m").long("model").default_value("tts-1-hd").possible_values(&["tts-1-hd", "tts-1"]).help("TTS model to use"))
-        .arg(Arg::with_name("voice").short("v").long("voice").default_value("fable").possible_values(&["alloy", "fable", "echo", "onyx", "shimmer", "nova"]).help("Voice to use for TTS"))
-        .get_matches();
-
-    let input_file_path = matches.value_of("input_file").unwrap();
-    let model = matches.value_of("model").unwrap();
-    let voice = matches.value_of("voice").unwrap();
-
-    let input_file_name = input_file_path.rsplit('/').next().unwrap().rsplit('.').nth(1).unwrap();
-    println!("Now Create a folder called {} for you.", green_text(input_file_name));
-    let output_dir = format!("./{}", input_file_name);
-    if !fs::metadata(&output_dir).is_ok() {
-        fs::create_dir(&output_dir).unwrap();
-    }
-
-    let lines = read_text_file(input_file_path);
-    let chunks = chunk_text(&lines);
-
-    let api_key = env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY not set");
-    generate_audio_files(chunks, &output_dir, model, voice, &api_key).await.unwrap();
-
-    println!("Chunk flac files are already in [ {} ] for ffmpeg to combine.\n\n", green_text(&output_dir));
-    combine_audio_files(input_file_path, &output_dir);
-    remove_tmp_files(&output_dir);
-    println!("\nThe File [ {} ] is ready for you. \n", green_text(input_file_name));
+    fs::remove_file(output_dir.join("concat.txt"))?;
+    Ok(())
 }
