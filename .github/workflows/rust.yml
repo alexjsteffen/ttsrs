@@ -11,15 +11,13 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest]
         include:
           - os: ubuntu-latest
             artifact_name: tts_openai_rust-linux-x86_64.tar.gz
           - os: ubuntu-latest
             artifact_name: tts_openai_rust-linux-arm64.tar.gz
             target: aarch64-unknown-linux-gnu
-          - os: windows-latest 
-            artifact_name: tts_openai_rust-windows-x86_64.tar.gz
           - os: macos-latest
             artifact_name: tts_openai_rust-macos-x86_64.tar.gz
     runs-on: ${{ matrix.os }}
