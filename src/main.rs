@@ -1,46 +1,17 @@
-/// The Rust program generates audio files from text using OpenAI TTS, combining them into a single file
-/// using ffmpeg.
-/// 
-/// Arguments:
-/// 
-/// * `chunks`: The `chunks` parameter in the code represents a vector of vectors of strings. Each inner
-/// vector contains a chunk of text lines that are split based on a token count limit. The `chunk_text`
-/// function takes a slice of text lines and divides them into chunks based on a token count limit of
-/// * `output_dir`: The `output_dir` parameter in the code refers to the directory where the generated
-/// audio files will be saved. It is the folder path where the temporary FLAC files are stored before
-/// they are combined into a single audio file using FFmpeg.
-/// * `model`: The `model` parameter in the code refers to the Text-to-Speech (TTS) model that will be
-/// used for generating audio files from the input text. The available options for the `model` parameter
-/// are "tts-1-hd" and "tts-1". These models
-/// * `voice`: The `voice` parameter in the code refers to the voice to be used for the Text-to-Speech
-/// (TTS) conversion. It is one of the options that can be specified when generating audio files from
-/// text using the OpenAI TTS API. The available voice options in the code are:
-/// * `api_key`: The `api_key` parameter is a unique authentication key provided by OpenAI that allows
-/// you to access their API services securely. This key is used to authenticate your requests to the
-/// OpenAI API, ensuring that only authorized users can make requests and access the services provided
-/// by OpenAI. It acts as a
-/// 
-/// Returns:
-/// 
-/// The code provided is a Rust program that generates audio files from text using the OpenAI
-/// Text-to-Speech (TTS) API. The program reads text from an input file, splits it into chunks based on
-/// a tokenization calculation, sends these chunks to the OpenAI TTS API to generate audio files,
-/// combines the generated audio files into a single output file using ffmpeg, and then cleans up
-/// temporary
 #[macro_use]
 extern crate serde_derive;
 extern crate reqwest;
 extern crate tokio;
 extern crate clap;
-extern crate ffmpeg_sys;
 extern crate tokio_stream;
 
 use std::env;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, SystemTime};
+use std::path::Path;
 use clap::{Arg, App};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
@@ -52,11 +23,11 @@ struct TTSResponse {
 
 async fn generate_audio_files(chunks: Vec<Vec<String>>, output_dir: &str, model: &str, voice: &str, api_key: &str) -> Result<(), Box<dyn std::error::Error>> {
     let client = reqwest::Client::new();
-    let mut now = SystemTime::now()
+    let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)?
         .as_secs()
         .to_string();
-
+    
     for (i, chunk) in chunks.iter().enumerate() {
         let chunk_string = chunk.join(" ");
         if chunk_string.len() > 4000 {
@@ -64,7 +35,7 @@ async fn generate_audio_files(chunks: Vec<Vec<String>>, output_dir: &str, model:
             std::process::exit(1);
         }
 
-        let (sx, rx) = mpsc::channel();
+        let (sx, rx) = mpsc::channel(1);
         thread::spawn(move || start_animation(rx));
 
         let response = client.post("https://api.openai.com/v1/audio/speech")
@@ -74,20 +45,20 @@ async fn generate_audio_files(chunks: Vec<Vec<String>>, output_dir: &str, model:
             .await?
             .json::<TTSResponse>()
             .await?;
-
+        
         sx.send(true).unwrap();
 
         // Download the returned audio file
-        let responseBytes = client
+        let response_bytes = client
             .get(&response.url)
             .send()
             .await?
             .bytes()
             .await?;
-
+        
         let file_path = format!("{}/tmp_{}_chunk{:06}.flac", output_dir, now, i + 1);
         let mut file = File::create(file_path)?;
-        file.write_all(&responseBytes)?;
+        file.write_all(&response_bytes)?;
 
         println!("A flac file saved as {}/tmp_{}_chunk{:06}.flac", output_dir, now, i + 1);
     }
@@ -123,7 +94,7 @@ fn read_text_file(file_path: &str) -> Vec<String> {
 fn chunk_text(lines: &[String]) -> Vec<Vec<String>> {
     // Mock function for encoding length calculation.
     // Replace this with actual tokenization calculation. 
-    let encoding_fn = |line: &str| -> usize { line.len() }; 
+    let encoding_fn = |line: &str| -> usize { line.len() };
 
     let mut chunks = vec![];
     let mut current_chunk = vec![];
@@ -146,7 +117,23 @@ fn chunk_text(lines: &[String]) -> Vec<Vec<String>> {
     chunks
 }
 
+fn find_ffmpeg_path() -> Option<String> {
+    let output = Command::new("which")
+        .arg("ffmpeg")
+        .output()
+        .expect("Failed to execute `which ffmpeg` command!");
+    
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if Path::new(&path).exists() {
+            return Some(path);
+        }
+    }
+    None
+}
+
 fn combine_audio_files(input_file_path: &str, output_dir: &str) {
+    let ffmpeg_path = find_ffmpeg_path().expect("FFmpeg executable not found in system PATH");
     let input_file_name = input_file_path.rsplit('.').nth(1).unwrap();
     let flac_files: Vec<_> = fs::read_dir(output_dir)
         .unwrap()
@@ -161,7 +148,7 @@ fn combine_audio_files(input_file_path: &str, output_dir: &str) {
     }
 
     let output_file_path = format!("{}/{}.flac", output_dir, input_file_name);
-    Command::new("ffmpeg")
+    Command::new(ffmpeg_path)
         .arg("-f")
         .arg("concat")
         .arg("-safe")
@@ -189,7 +176,7 @@ async fn main() {
     let matches = App::new("Generate audio files from text using OpenAI TTS.")
         .arg(Arg::with_name("input_file").help("Input text file name").required(true))
         .arg(Arg::with_name("model").short("m").long("model").default_value("tts-1-hd").possible_values(&["tts-1-hd", "tts-1"]).help("TTS model to use"))
-        .arg(Arg::with_name("voice").short("v").long("voice").default_value("fable").possible_values(&['alloy', 'fable', 'echo', 'onyx', 'shimmer', 'nova']).help("Voice to use for TTS"))
+        .arg(Arg::with_name("voice").short("v").long("voice").default_value("fable").possible_values(&["alloy", "fable", "echo", "onyx", "shimmer", "nova"]).help("Voice to use for TTS"))
         .get_matches();
 
     let input_file_path = matches.value_of("input_file").unwrap();
@@ -214,4 +201,3 @@ async fn main() {
     remove_tmp_files(&output_dir);
     println!("\nThe File [ {} ] is ready for you. \n", green_text(input_file_name));
 }
-
