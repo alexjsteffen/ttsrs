@@ -198,24 +198,29 @@ fn combine_audio_files(input_file_path: &Path, output_dir: &Path) -> Result<()> 
         })
         .collect();
 
-    let concat_file_path = output_dir.join("concat.txt");
-    let mut concat_file = File::create(&concat_file_path)?;
-    for flac_file in &flac_files {
-        writeln!(concat_file, "file '{}'", flac_file.file_name().unwrap().to_str().unwrap())?;
-    }
+let concat_file_path = output_dir.join("concat.txt");
+let mut concat_file = File::create(&concat_file_path)?;
+for flac_file in &flac_files {
+    writeln!(concat_file, "file '{}'", flac_file.to_str().unwrap())?;
+}
 
-    let output_file_path = output_dir.join(format!("{}.flac", input_file_name));
-    let status = Command::new("ffmpeg")
-        .args(
-            &[
-                "-i",
-                concat_file_path.to_str().unwrap(),
-                "-c:a",
-                "flac",
-                output_file_path.to_str().unwrap(),
-            ]
-        )
-        .status()?;
+let output_file_path = output_dir.join(format!("{}.flac", input_file_name));
+let status = Command::new("ffmpeg")
+    .args(
+        &[
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            concat_file_path.to_str().unwrap(),
+            "-c:a",
+            "flac",
+            output_file_path.to_str().unwrap(),
+        ]
+    )
+    .status()?;
+
 
     if !status.success() {
         anyhow::bail!("ffmpeg command failed");
