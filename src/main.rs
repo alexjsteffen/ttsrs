@@ -206,13 +206,15 @@ fn combine_audio_files(input_file_path: &Path, output_dir: &Path) -> Result<()> 
 
     let output_file_path = output_dir.join(format!("{}.flac", input_file_name));
     let status = Command::new("ffmpeg")
-        .args(&[
-            "-f", "concat",
-            "-safe", "0",
-            "-i", concat_file_path.to_str().unwrap(),
-            "-c", "flac",
-            output_file_path.to_str().unwrap(),
-        ])
+        .args(
+            &[
+                "-i",
+                concat_file_path.to_str().unwrap(),
+                "-c:a",
+                "flac",
+                output_file_path.to_str().unwrap(),
+            ]
+        )
         .status()?;
 
     if !status.success() {
