@@ -48,7 +48,7 @@ jobs:
 
     - name: Archive contents
       run: |
-        tar -c target/release ./* | zstd -z -o results.tar.zst
+        tar -c target/release ./* | zstd -z -o ttsrs.tar.zst
       shell: bash
 
     - name: Upload artifact
