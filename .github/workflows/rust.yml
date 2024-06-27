@@ -34,7 +34,12 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        else
+          echo "No requirements.txt found. Skipping dependency installation."
+        fi
+      shell: bash
 
     - name: Run tests
       run: python -m unittest discover
@@ -49,4 +54,4 @@ jobs:
       uses: actions/upload-artifact@v2
       with:
         name: test-results-${{ matrix.os }}-${{ matrix.arch }}
-        path: ttsrs.tar.gz
+        path: results.tar.gz
