@@ -36,6 +36,21 @@ struct OpenAIError {
     message: String,
 }
 
+/// The main function of the program.
+/// 
+/// This function orchestrates the entire process of text-to-speech conversion:
+/// 1. Parses command-line arguments
+/// 2. Reads the input text file
+/// 3. Chunks the text into smaller pieces
+/// 4. Generates audio files for each chunk
+/// 5. Combines the audio files
+/// 6. Cleans up temporary files
+///
+/// # Returns
+///
+/// Returns a `Result<()>` which is `Ok(())` if the process completes successfully,
+/// or an `Err` containing the error information if something goes wrong.
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -73,9 +88,29 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Formats the given text in green color for console output.
+///
+/// # Arguments
+///
+/// * `text` - A string slice that holds the text to be colored.
+///
+/// # Returns
+///
+/// A `String` containing the input text wrapped in ANSI escape codes for green color.
+
 fn green_text(text: &str) -> String {
     format!("\x1b[92m{}\x1b[0m", text)
 }
+
+/// Reads a text file and returns its contents as a vector of strings.
+///
+/// # Arguments
+///
+/// * `file_path` - A `Path` reference to the file to be read.
+///
+/// # Returns
+///
+/// A `Result` containing a `Vec<String>` where each element is a non-empty line from the file.
 
 fn read_text_file(file_path: &Path) -> Result<Vec<String>> {
     let content = fs::read_to_string(file_path)?;
@@ -87,6 +122,16 @@ fn read_text_file(file_path: &Path) -> Result<Vec<String>> {
             .collect()
     )
 }
+
+/// Chunks the input text into smaller pieces, each containing up to 500 tokens.
+///
+/// # Arguments
+///
+/// * `lines` - A slice of `String`s, each representing a line of text.
+///
+/// # Returns
+///
+/// A `Vec<Vec<String>>` where each inner `Vec<String>` is a chunk of the input text.
 
 fn chunk_text(lines: &[String]) -> Vec<Vec<String>> {
     let bpe = cl100k_base().unwrap();
@@ -112,6 +157,22 @@ fn chunk_text(lines: &[String]) -> Vec<Vec<String>> {
 
     chunks
 }
+
+/// Generates audio files for each chunk of text using the OpenAI API.
+///
+/// # Arguments
+///
+/// * `chunks` - A slice of text chunks, where each chunk is a `Vec<String>`.
+/// * `output_dir` - The directory where the audio files will be saved.
+/// * `model` - The TTS model to use.
+/// * `voice` - The voice to use for TTS.
+/// * `client` - An HTTP client for making API requests.
+/// * `api_key` - The OpenAI API key.
+///
+/// # Returns
+///
+/// A `Result<()>` which is `Ok(())` if all audio files are generated successfully,
+/// or an `Err` containing the error information if something goes wrong.
 
 async fn generate_audio_files(
     chunks: &[Vec<String>],
@@ -186,6 +247,17 @@ async fn generate_audio_files(
     Ok(())
 }
 
+/// Combines all the generated audio files into a single file using ffmpeg.
+///
+/// # Arguments
+///
+/// * `output_dir` - The directory containing the audio files to be combined.
+///
+/// # Returns
+///
+/// A `Result<()>` which is `Ok(())` if the audio files are combined successfully,
+/// or an `Err` containing the error information if something goes wrong.
+
 fn combine_audio_files(output_dir: &Path) -> Result<()> {
     let mut input_files = Vec::new();
     for entry in fs::read_dir(output_dir)? {
@@ -225,6 +297,17 @@ fn combine_audio_files(output_dir: &Path) -> Result<()> {
 
     Ok(())
 }
+
+/// Removes temporary files from the output directory.
+///
+/// # Arguments
+///
+/// * `output_dir` - The directory containing the temporary files to be removed.
+///
+/// # Returns
+///
+/// A `Result<()>` which is `Ok(())` if all temporary files are removed successfully,
+/// or an `Err` containing the error information if something goes wrong.
 
 fn remove_tmp(output_dir: &Path) -> Result<()> {
     for entry in fs::read_dir(output_dir)? {
