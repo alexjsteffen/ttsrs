@@ -26,6 +26,19 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        override: true
+
+    - name: Build
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release
+
     - name: Install zstd
       uses: ConorMacBride/install-package@v1
       with:
@@ -35,11 +48,11 @@ jobs:
 
     - name: Archive contents
       run: |
-        tar -c ./* | zstd -z -o results.tar.zst
+        tar -c target/release ./* | zstd -z -o results.tar.zst
       shell: bash
 
     - name: Upload artifact
       uses: actions/upload-artifact@v2
       with:
-        name: repo-contents-${{ matrix.os }}-${{ matrix.arch }}
-        path: results.tar.zst
+        name: repo-contents-and-build-${{ matrix.os }}-${{ matrix.arch }}
+        path: ttsrs.tar.zst
