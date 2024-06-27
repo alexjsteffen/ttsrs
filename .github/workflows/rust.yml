@@ -26,32 +26,20 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    - name: Set up Python
-      uses: actions/setup-python@v2
+    - name: Install zstd
+      uses: ConorMacBride/install-package@v1
       with:
-        python-version: '3.x'
+        apt: zstd
+        brew: zstd
+        choco: zstandard
 
-    - name: Install dependencies
+    - name: Archive contents
       run: |
-        python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then
-          pip install -r requirements.txt
-        else
-          echo "No requirements.txt found. Skipping dependency installation."
-        fi
-      shell: bash
-
-    - name: Run tests
-      run: python -m unittest discover
-
-    - name: Archive results
-      if: success()
-      run: |
-        tar -czf results.tar.gz ./*
+        tar -c ./* | zstd -z -o results.tar.zst
       shell: bash
 
     - name: Upload artifact
       uses: actions/upload-artifact@v2
       with:
-        name: test-results-${{ matrix.os }}-${{ matrix.arch }}
-        path: results.tar.gz
+        name: repo-contents-${{ matrix.os }}-${{ matrix.arch }}
+        path: results.tar.zst
