@@ -2,33 +2,63 @@ name: CI
 
 on:
   push:
-    branches: [ "master" ]
-
-env:
-  CARGO_TERM_COLOR: always
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
   build:
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        arch: [x64, arm64]
+        libc: [gnu, musl]
         include:
-          - os: ubuntu-latest
-            artifact_name: tts_openai_rust-linux-x86_64.tar.gz
-          - os: ubuntu-latest
-            artifact_name: tts_openai_rust-linux-arm64.tar.gz
-            target: aarch64-unknown-linux-gnu
           - os: macos-latest
-            artifact_name: tts_openai_rust-macos-x86_64.tar.gz
-    runs-on: ${{ matrix.os }}
+            arch: x64
+          - os: macos-latest
+            arch: arm64
+          - os: windows-latest
+            arch: x64
+            libc: gnu
+          - os: ubuntu-latest
+            arch: x64
+            libc: gnu
+          - os: ubuntu-latest
+            arch: arm64
+            libc: gnu
+          - os: ubuntu-latest
+            arch: x64
+            libc: musl
+          - os: ubuntu-latest
+            arch: arm64
+            libc: musl
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Build
-        run: cargo build --release --verbose
-      - name: Compress artifact
-        run: tar -czvf ${{ matrix.artifact_name }} target/release/tts_openai_rust
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_name }}
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+
+    - name: Install dependencies
+      run: |
+        if [ "${{ matrix.os }}" == "windows-latest" ]; then
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+        else
+          python3 -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+    - name: Run tests
+      run: |
+        if [ "${{ matrix.os }}" == "windows-latest" ]; then
+          python -m unittest discover
+        else
+          python3 -m unittest discover
+
