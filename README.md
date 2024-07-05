@@ -1,9 +1,9 @@
-# ai-tts.rs Documentation
+# _ttsrs_ Documentation
 
 **Overview**
 -----------
 
-The ai-tts.rs project provides a command-line tool for generating spoken audio from text files using OpenAI's text-to-speech (TTS) API. It is based on a similar Python script. 
+The ttsrs project provides a command-line tool for generating spoken audio from text files using OpenAI's text-to-speech (TTS) API. It is based on a similar Python script. 
 
 **Usage**
 --------
@@ -26,6 +26,6 @@ The ai-tts.rs project provides a command-line tool for generating spoken audio f
 
 ### Setup
 
-Before using ai-tts.rs, make sure to set the `OPENAI_API_KEY` environment variable with your OpenAI API key.
+Before using ttsrs, make sure to set the `OPENAI_API_KEY` environment variable with your OpenAI API key.
 
-Enjoy using ai-tts.rs!
+Enjoy using ttsrs!

@@ -1,6 +1,6 @@
 [package]
-name = "tts_openai_rust"
-version = "0.1.0"
+name = "ttsrs"
+version = "0.1.1"
 edition = "2021"
 
 [dependencies]
