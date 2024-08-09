@@ -7,7 +7,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use tiktoken_rs::cl100k_base;
 
@@ -37,7 +37,7 @@ struct OpenAIError {
 }
 
 /// The main function of the program.
-/// 
+///
 /// This function orchestrates the entire process of text-to-speech conversion:
 /// 1. Parses command-line arguments
 /// 2. Reads the input text file
@@ -65,14 +65,25 @@ async fn main() -> Result<()> {
         .to_str()
         .context("Invalid input file name")?;
 
-    println!("Now creating a folder called {} for you.", green_text(input_file_name));
+    println!(
+        "Now creating a folder called {} for you.",
+        green_text(input_file_name)
+    );
     let output_dir = Path::new("./").join(input_file_name);
     fs::create_dir_all(&output_dir)?;
 
     let lines = read_text_file(input_file_path)?;
     let chunks = chunk_text(&lines);
 
-    generate_audio_files(&chunks, &output_dir, &args.model, &args.voice, &client, &api_key).await?;
+    generate_audio_files(
+        &chunks,
+        &output_dir,
+        &args.model,
+        &args.voice,
+        &client,
+        &api_key,
+    )
+    .await?;
 
     println!(
         "Chunk flac files are already in [ ./{} ] for ffmpeg to combine.\n\n",
@@ -83,7 +94,10 @@ async fn main() -> Result<()> {
 
     remove_tmp(&output_dir)?;
 
-    println!("\nThe File [ {} ] is ready for you. \n", green_text(input_file_name));
+    println!(
+        "\nThe File [ {} ] is ready for you. \n",
+        green_text(input_file_name)
+    );
 
     Ok(())
 }
@@ -114,13 +128,11 @@ fn green_text(text: &str) -> String {
 
 fn read_text_file(file_path: &Path) -> Result<Vec<String>> {
     let content = fs::read_to_string(file_path)?;
-    Ok(
-        content
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .map(String::from)
-            .collect()
-    )
+    Ok(content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(String::from)
+        .collect())
 }
 
 /// Chunks the input text into smaller pieces, each containing up to 500 tokens.
@@ -180,7 +192,7 @@ async fn generate_audio_files(
     model: &str,
     voice: &str,
     client: &Client,
-    api_key: &str
+    api_key: &str,
 ) -> Result<()> {
     let date_time_string = Local::now().format("%Y%m%d%H%M").to_string();
 
@@ -193,7 +205,10 @@ async fn generate_audio_files(
             format!("{:06}", i + 1),
             chunks.len()
         );
-        println!("Input String: {}...", &chunk_string[..chunk_string.len().min(60)]);
+        println!(
+            "Input String: {}...",
+            &chunk_string[..chunk_string.len().min(60)]
+        );
 
         if chunk_string.len() > 4000 {
             anyhow::bail!(
@@ -207,21 +222,20 @@ async fn generate_audio_files(
         pb.set_style(
             ProgressStyle::default_spinner()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
-                .template("{spinner:.green} {msg}")?
+                .template("{spinner:.green} {msg}")?,
         );
         pb.set_message("Generating audio...");
 
         let response = client
             .post("https://api.openai.com/v1/audio/speech")
             .header("Authorization", format!("Bearer {}", api_key))
-            .json(
-                &serde_json::json!({
+            .json(&serde_json::json!({
                 "model": model,
                 "voice": voice,
                 "input": chunk_string,
-            })
-            )
-            .send().await?;
+            }))
+            .send()
+            .await?;
 
         if !response.status().is_success() {
             let error: OpenAIResponse = response.json().await?;
@@ -263,7 +277,14 @@ fn combine_audio_files(output_dir: &Path) -> Result<()> {
     for entry in fs::read_dir(output_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().map(|ext| ext == "flac").unwrap_or(false) && path.file_name().unwrap().to_str().unwrap().starts_with("tmp") {
+        if path.extension().map(|ext| ext == "flac").unwrap_or(false)
+            && path
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("tmp")
+        {
             input_files.push(path);
         }
     }
@@ -276,20 +297,15 @@ fn combine_audio_files(output_dir: &Path) -> Result<()> {
         ffmpeg_args.push(input_file.to_str().unwrap().to_string());
     }
     ffmpeg_args.push("-filter_complex".to_string());
-    ffmpeg_args.push(format!(
-        "concat=n={}:v=0:a=1[outa]",
-        input_files.len()
-    ));
+    ffmpeg_args.push(format!("concat=n={}:v=0:a=1[outa]", input_files.len()));
     ffmpeg_args.push("-map".to_string());
     ffmpeg_args.push("[outa]".to_string());
     ffmpeg_args.push("-c:a".to_string());
     ffmpeg_args.push("flac".to_string());
     ffmpeg_args.push("-y".to_string()); // Overwrite output files without asking
-    ffmpeg_args.push(output_dir.join("combined.flac").to_str().unwrap().to_string());
+    ffmpeg_args.push(output_dir.join("output.flac").to_str().unwrap().to_string());
 
-    let status = Command::new("ffmpeg")
-        .args(&ffmpeg_args)
-        .status()?;
+    let status = Command::new("ffmpeg").args(&ffmpeg_args).status()?;
 
     if !status.success() {
         anyhow::bail!("ffmpeg command failed");
@@ -313,7 +329,13 @@ fn remove_tmp(output_dir: &Path) -> Result<()> {
     for entry in fs::read_dir(output_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.file_name().unwrap().to_str().unwrap().starts_with("tmp") {
+        if path
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("tmp")
+        {
             fs::remove_file(path)?;
         }
     }
