@@ -1,18 +1,19 @@
 # _ttsrs_ Documentation
 
 **Overview**
------------
+--------
 
-The ttsrs project provides a command-line tool for generating spoken audio from text files using OpenAI's text-to-speech (TTS) API. It is based on a similar Python script. 
+The ttsrs project provides a command-line tool for generating spoken audio from text files using OpenAI's text-to-speech (TTS) API. It is based on a similar Python script.
 
 **Usage**
---------
+-----
 
 ### Command-Line Arguments
 
--  `input_file`: The path to the input text file.
--  `--model` (optional): The TTS model to use. Default is `tts-1-hd`.
--  `--voice` (optional): The voice to use for TTS. Default is `fable`.
+- `input_file`: The path to the input text file.
+- `--model` (optional): The TTS model to use. Default is `tts-1-hd`.
+- `--voice` (optional): The voice to use for TTS. Default is `fable`.
+- `--apikey` (optional): Use an OpenAI api key inline.
 
 ### Features
 
