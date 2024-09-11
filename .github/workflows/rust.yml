@@ -1,58 +1,48 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - master
+     push:
+          branches:
+               - master
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            arch: x64
-          - os: ubuntu-22.04
-            arch: x64
-          - os: macos-latest
-            arch: arm64
-          - os: macos-14
-            arch: x64
-          - os: windows-latest
-            arch: x64
+     build:
+          runs-on: ${{ matrix.os }}
+          strategy:
+               matrix:
+                    include:
+                         - os: ubuntu-latest
+                           arch: x64
+                         - os: ubuntu-22.04
+                           arch: x64
+                         - os: macos-latest
+                           arch: arm64
+                         - os: macos-14
+                           arch: x64
+                         - os: windows-latest
+                           arch: x64
 
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
+          steps:
+               - name: Checkout code
+                 uses: actions/checkout@v2
 
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        profile: minimal
-        override: true
+               - name: Install Rust
+                 uses: actions-rs/toolchain@v1
+                 with:
+                      toolchain: stable
+                      profile: minimal
+                      override: true
 
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --release
+               - name: Build
+                 uses: actions-rs/cargo@v1
+                 with:
+                      command: build
+                      args: --release
 
-    - name: Install zstd
-      uses: ConorMacBride/install-package@v1
-      with:
-        apt: zstd
-        brew: zstd
-        choco: zstandard
-
-    - name: Archive contents
-      run: |
-        tar -c target/release ./* | zstd -z -o ttsrs.tar.zst
-      shell: bash
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: repo-contents-and-build-${{ matrix.os }}-${{ matrix.arch }}
-        path: ttsrs.tar.zst
+               - name: Upload artifact
+                 uses: actions/upload-artifact@v4
+                 with:
+                      name: ttsrs-${{ matrix.os }}-${{ matrix.arch }}
+                      path: |
+                           target/release/ttsrs
+                           target/release/ttsrs.exe
