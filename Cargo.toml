@@ -14,3 +14,4 @@ clap = { version = "4.4", features = ["derive"] }
 anyhow = "1.0"
 futures = "0.3"
 indicatif = "0.17"
+dialoguer = "0.10"
