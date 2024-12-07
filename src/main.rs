@@ -1,16 +1,20 @@
-use anyhow::{ Context, Result };
+use anyhow::{Context, Result};
 use chrono::Local;
 use clap::Parser;
+use dialoguer::{Input, Select};
 use futures::stream::StreamExt;
-use indicatif::{ ProgressBar, ProgressStyle };
+use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
+use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 use serde::Deserialize;
-use std::fs::{ self, File };
-use std::io::Write;
-use std::path::Path;
-use std::process::Command;
+use std::{
+    fs::{self, File},
+    io::Write,
+    path::Path,
+};
 use tiktoken_rs::cl100k_base;
-use dialoguer::{Input, Select};
+use lame::{Lame, LameError};
+use flac::{StreamEncoder, StreamEncoderSettings};
 
 // Define command-line arguments using the clap crate
 #[derive(Parser, Debug)]
@@ -48,13 +52,15 @@ struct OpenAIError {
     message: String,
 }
 
-/// The main function of the program.
+/// Generates audio from text using OpenAI's TTS API
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut args = Args::parse();
 
     // Get the API key from either the command-line argument or the environment variable
-    let api_key = args.apikey.clone()
+    let api_key = args
+        .apikey
+        .clone()
         .or_else(|| std::env::var("OPENAI_API_KEY").ok())
         .or_else(|| {
             // Prompt the user for the API key if not provided
@@ -65,7 +71,7 @@ async fn main() -> Result<()> {
             Some(input)
         })
         .context(
-            "OpenAI API key not provided. Set it via the --apikey flag, the OPENAI_API_KEY environment variable, or input it when prompted."
+            "OpenAI API key not provided. Set it via the --apikey flag, the OPENAI_API_KEY environment variable, or input it when prompted.",
         )?;
 
     // Prompt for input file if not provided
@@ -94,7 +100,12 @@ async fn main() -> Result<()> {
             .items(&voices)
             .default(0)
             .interact()?;
-        args.voice = voices[selection].split(" - ").next().unwrap().to_string();
+        // Extract voice name and convert to lowercase for API compatibility
+        args.voice = voices[selection]
+            .split(" - ")
+            .next()
+            .unwrap()
+            .to_lowercase();
     }
 
     // Prompt for output format
@@ -126,7 +137,7 @@ async fn main() -> Result<()> {
     let chunks = chunk_text(&lines);
 
     // Generate audio files for each chunk
-    generate_audio_files(&chunks, &output_dir, &args.model, &args.voice, &args.format, &client, &api_key).await?;
+    generate_audio_files(&chunks, &output_dir, &args.model, &args.voice, &client, &api_key).await?;
 
     println!(
         "Chunk flac files are already in [ ./{} ] for ffmpeg to combine.\n\n",
@@ -144,12 +155,12 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-// Formats text in green color for console output
+/// Formats text in green color for console output
 fn green_text(text: &str) -> String {
     format!("\x1b[92m{}\x1b[0m", text)
 }
 
-// Reads a text file and returns its contents as a vector of strings
+/// Reads a text file and returns its contents as a vector of strings
 fn read_text_file(file_path: &Path) -> Result<Vec<String>> {
     let content = fs::read_to_string(file_path)?;
     Ok(
@@ -161,7 +172,7 @@ fn read_text_file(file_path: &Path) -> Result<Vec<String>> {
     )
 }
 
-// Chunks the input text into smaller pieces, each containing up to 500 tokens
+/// Chunks the input text into smaller pieces based on token count
 fn chunk_text(lines: &[String]) -> Vec<Vec<String>> {
     let bpe = cl100k_base().unwrap();
     let mut chunks = Vec::new();
@@ -187,16 +198,17 @@ fn chunk_text(lines: &[String]) -> Vec<Vec<String>> {
     chunks
 }
 
-// Generates audio files for each chunk of text using the OpenAI API
+/// Generates audio files for each chunk of text using the OpenAI API
 async fn generate_audio_files(
     chunks: &[Vec<String>],
     output_dir: &Path,
     model: &str,
     voice: &str,
-    format: &str,
     client: &Client,
-    api_key: &str
+    api_key: &str,
 ) -> Result<()> {
+    // Force format to WAV for internal processing
+    let internal_format = "wav";
     let date_time_string = Local::now().format("%Y%m%d%H%M").to_string();
 
     for (i, chunk) in chunks.iter().enumerate() {
@@ -234,14 +246,14 @@ async fn generate_audio_files(
             .json(
                 &serde_json::json!({
                 "model": model,
-                "voice": voice,
+                "voice": voice.to_lowercase(), // Ensure voice name is lowercase
                 "input": chunk_string,
             })
             )
             .send().await?;
 
         // Handle API errors
-        if !response.status().is_success() {
+        if (!response.status().is_success()) {
             let error: OpenAIResponse = response.json().await?;
             if let Some(error) = error.error {
                 anyhow::bail!("OpenAI API error: {}", error.message);
@@ -251,7 +263,7 @@ async fn generate_audio_files(
         }
 
         // Save the audio response to a file
-        let file_name = format!("tmp_{}_chunk{:06}.{}", date_time_string, i + 1, format);
+        let file_name = format!("tmp_{}_chunk{:06}.{}", date_time_string, i + 1, internal_format);
         let file_path = output_dir.join(&file_name);
         let mut file = File::create(&file_path)?;
 
@@ -266,18 +278,14 @@ async fn generate_audio_files(
     Ok(())
 }
 
-/// Combines all the generated audio files into a single file using ffmpeg.
+/// Combines all the generated audio files into a single file of the specified format
 fn combine_audio_files(output_dir: &Path, format: &str) -> Result<()> {
-    // Collect all the temporary flac files in the output directory
+    // Collect all the temporary WAV files in the output directory
     let mut input_files = Vec::new();
     for entry in fs::read_dir(output_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if
-            path
-                .extension()
-                .map(|ext| ext == format)
-                .unwrap_or(false) &&
+        if path.extension().map(|ext| ext == "wav").unwrap_or(false) &&
             path.file_name().unwrap().to_str().unwrap().starts_with("tmp")
         {
             input_files.push(path);
@@ -287,32 +295,65 @@ fn combine_audio_files(output_dir: &Path, format: &str) -> Result<()> {
     // Sort the files to ensure they are combined in the correct order
     input_files.sort();
 
-    // Construct the ffmpeg command arguments
-    let mut ffmpeg_args = Vec::new();
+    // Collect combined samples
+    let mut combined_samples = Vec::new();
     for input_file in &input_files {
-        ffmpeg_args.push("-i".to_string());
-        ffmpeg_args.push(input_file.to_str().unwrap().to_string());
-    }
-    ffmpeg_args.push("-filter_complex".to_string());
-    ffmpeg_args.push(format!("concat=n={}:v=0:a=1[outa]", input_files.len()));
-    ffmpeg_args.push("-map".to_string());
-    ffmpeg_args.push("[outa]".to_string());
-    ffmpeg_args.push("-c:a".to_string());
-    ffmpeg_args.push(format.to_string());
-    ffmpeg_args.push("-y".to_string()); // Overwrite output files without asking
-    ffmpeg_args.push(output_dir.join(format!("output.{}", format)).to_str().unwrap().to_string());
-
-    // Execute the ffmpeg command
-    let status = Command::new("ffmpeg").args(&ffmpeg_args).status()?;
-
-    if !status.success() {
-        anyhow::bail!("ffmpeg command failed");
+        let mut reader = WavReader::open(input_file)?;
+        for sample in reader.samples::<i16>() {
+            combined_samples.push(sample?);
+        }
     }
 
+    // Write the combined samples to the desired format
+    let output_file_path = output_dir.join(format!("output.{}", format));
+    match format {
+        "wav" => {
+            let spec = WavSpec {
+                channels: 1,
+                sample_rate: 24000,
+                bits_per_sample: 16,
+                sample_format: SampleFormat::Int,
+            };
+            let mut writer = WavWriter::create(&output_file_path, spec)?;
+            for sample in combined_samples {
+                writer.write_sample(sample)?;
+            }
+            writer.finalize()?;
+        }
+        "mp3" => {
+            let mut lame = Lame::new()?;
+            lame.set_num_channels(1)?;
+            lame.set_in_samplerate(24000)?;
+            lame.init_params()?;
+
+            let mp3_data = lame.encode(&combined_samples, &[])?;
+            fs::write(&output_file_path, mp3_data)?;
+        }
+        "flac" => {
+            let settings = StreamEncoderSettings::default()
+                .bits_per_sample(16)
+                .channels(1)
+                .sample_rate(24000);
+            let mut encoder = StreamEncoder::new(File::create(&output_file_path)?, settings)?;
+            for sample in combined_samples {
+                encoder.write_sample(sample)?;
+            }
+            encoder.finish()?;
+        }
+        "pcm" => {
+            let mut file = File::create(&output_file_path)?;
+            for sample in &combined_samples {
+                file.write_all(&sample.to_le_bytes())?;
+            }
+        }
+        _ => anyhow::bail!("Unsupported output format: {}", format),
+    }
+
+    println!("\nCreated output file: {}", output_file_path.display());
     Ok(())
 }
 
-/// Removes temporary files from the output directory.
+/// Removes temporary files from the output directory
 fn remove_tmp(output_dir: &Path) -> Result<()> {
     for entry in fs::read_dir(output_dir)? {
         let entry = entry?;

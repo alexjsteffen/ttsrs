@@ -1,42 +1,80 @@
-# _ttsrs_ Documentation
+# ttsrs
 
-**Overview**
---------
+A command-line tool for generating spoken audio from text files using OpenAI's text-to-speech (TTS) API.
 
-The **ttsrs** project provides a command-line tool for generating spoken audio from text files using OpenAI's text-to-speech (TTS) API. It is designed to facilitate the conversion of written text into high-quality spoken audio, making it accessible for various applications such as audiobooks, accessibility tools, and automated announcements. This project is based on a similar Python script but offers enhanced functionality and ease of use through a streamlined command-line interface.
+## Overview
 
-For more details, visit the [original Python project on GitHub](https://github.com/tom-huntington/unofficial-openai-tts-cli).
+**ttsrs** converts written text into high-quality spoken audio, making it useful for:
+- Audiobook creation
+- Accessibility tools
+- Automated announcements
+- Educational content
 
-**Usage**
------
+Based on the [unofficial-openai-tts-cli](https://github.com/tom-huntington/unofficial-openai-tts-cli) Python project, but with enhanced functionality and a streamlined interface.
 
-### Command-Line Arguments
+## Features
 
-- `--model` (optional): The TTS model to use. Default is `tts-1-hd`.
-- `--voice` (optional): The voice to use for TTS. Default is `fable`.
-- `--apikey` (optional): Use an OpenAI api key inline.
-- `input_file`: The path to the input text file. **It must inserted after the flags**
+- Interactive wizard for easy configuration
+- Multiple voice options with descriptions
+- Support for multiple output formats (MP3, FLAC, WAV, PCM)
+- Automatic text chunking to handle API limits
+- Internal audio processing (no ffmpeg required)
+- Progress indication during generation
+- Organized output file management
 
-### Features
+## Usage
 
-* Reads text from an input file.
-* Chunks the text into smaller pieces to comply with the API's token limit.
-* Generates audio files for each text chunk using OpenAI's TTS API.
-* Combines the generated audio chunks into a single output file.
-* Displays a spinning animation while generating audio to indicate progress.
-* Creates a directory with the same name as the input file to store the output and temporary files.
-* Removes temporary files after the final output file is generated.
-
-### Setup
-
-Before using ttsrs, make sure to set the `OPENAI_API_KEY` environment variable with your OpenAI API key.
-
-### Example
-
-The completed markdown string for your shell command (API Key is not functional) would look like this:
+### Basic Command
 
 ```bash
-ttsrs --apikey sk-m8xy4xZg7E5VgfRzTg7cY4HlckFJ92eKlH1zpqv5PQKTYUBl --voice alloy --model tts-1
+ttsrs [--model MODEL] [--voice VOICE] [--format FORMAT] [--apikey KEY] [INPUT_FILE]
 ```
 
-Make sure to replace the API key with your actual key before executing the command. Enjoy using ttsrs!
+### Arguments
+
+- `--model`: TTS model (default: tts-1-hd)
+- `--voice`: Voice selection (default: interactive selection)
+- `--format`: Output format (default: interactive selection)
+- `--apikey`: OpenAI API key (optional)
+- `INPUT_FILE`: Text file path (can be provided via prompt)
+
+### Available Voices
+
+- **Echo**: Clear and bright, ideal for announcements
+- **Fable**: Great for storytelling
+- **Onyx**: Deep and resonant
+- **Nova**: Youthful and energetic
+- **Shimmer**: Soft and soothing
+- **Alloy**: Versatile and natural-sounding
+
+### Output Formats
+
+- MP3: Compressed audio with good quality
+- FLAC: Lossless compression
+- WAV: Uncompressed audio
+- PCM: Raw audio data
+
+## Setup
+
+Set your OpenAI API key using one of these methods:
+1. Environment variable: `OPENAI_API_KEY`
+2. Command-line argument: `--apikey`
+3. Interactive prompt during execution
+
+## Example
+
+```bash
+# With all options specified
+ttsrs --apikey YOUR_API_KEY --voice alloy --model tts-1-hd --format mp3 input.txt
+
+# Interactive mode
+ttsrs
+```
+
+The tool will:
+1. Create an output directory named after your input file
+2. Split text into API-friendly chunks
+3. Generate audio for each chunk
+4. Combine chunks internally using native audio processing
+5. Save the final file in your chosen format
+6. Clean up temporary files automatically

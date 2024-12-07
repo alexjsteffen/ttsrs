@@ -1,0 +1,6 @@
+
+{
+    // ...existing settings...
+    "rust-analyzer.cargo.loadOutDirsFromCheck": true,
+    "rust-analyzer.procMacro.enable": true
+}
