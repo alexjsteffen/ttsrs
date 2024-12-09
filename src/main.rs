@@ -218,6 +218,9 @@ async fn generate_audio_files(
 ) -> Result<()> {
     // Generate a timestamp for file naming
     let date_time_string = Local::now().format("%Y%m%d%H%M").to_string();
+    
+    // Convert voice name to lowercase for API call
+    let voice_lowercase = voice.to_lowercase();
 
     // Iterate over each chunk
     for (i, chunk) in chunks.iter().enumerate() {
@@ -257,7 +260,7 @@ async fn generate_audio_files(
             .json(
                 &serde_json::json!({
                 "model": model,
-                "voice": voice,
+                "voice": voice_lowercase,  // Use lowercase voice name
                 "input": chunk_string,
             })
             )

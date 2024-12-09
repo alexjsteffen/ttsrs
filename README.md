@@ -1,42 +1,111 @@
-# _ttsrs_ Documentation
+# ttsrs - Text-to-Speech CLI Tool
 
-**Overview**
---------
+A Rust-based command-line tool for converting text to speech using OpenAI's TTS API.
 
-The **ttsrs** project provides a command-line tool for generating spoken audio from text files using OpenAI's text-to-speech (TTS) API. It is designed to facilitate the conversion of written text into high-quality spoken audio, making it accessible for various applications such as audiobooks, accessibility tools, and automated announcements. This project is based on a similar Python script but offers enhanced functionality and ease of use through a streamlined command-line interface.
+## Table of Contents
+- [Features](#features)
+- [Installation](#installation)
+- [Prerequisites](#prerequisites)
+- [Usage](#usage)
+  - [Command-Line Arguments](#command-line-arguments)
+  - [Voice Options](#voice-options)
+  - [Audio Formats](#audio-formats)
+- [Examples](#examples)
+- [Environment Variables](#environment-variables)
+- [Technical Details](#technical-details)
 
-For more details, visit the [original Python project on GitHub](https://github.com/tom-huntington/unofficial-openai-tts-cli).
+## Features
 
-**Usage**
------
+- 🎯 Easy-to-use command-line interface
+- 🔊 High-quality text-to-speech conversion using OpenAI's API
+- 📝 Supports large text files through automatic chunking
+- 🎨 Multiple voice options and audio formats
+- 🔄 Interactive mode for selecting voices and formats
+- 📁 Organized output with automatic file management
+- 🚀 Progress indicators during conversion
+
+## Installation
+
+```bash
+cargo install ttsrs
+```
+
+## Prerequisites
+
+- Rust (latest stable version)
+- ffmpeg (for audio file combining)
+- OpenAI API key
+- Internet connection
+
+## Usage
 
 ### Command-Line Arguments
 
-- `--model` (optional): The TTS model to use. Default is `tts-1-hd`.
-- `--voice` (optional): The voice to use for TTS. Default is `fable`.
-- `--apikey` (optional): Use an OpenAI api key inline.
-- `input_file`: The path to the input text file. **It must inserted after the flags**
-
-### Features
-
-* Reads text from an input file.
-* Chunks the text into smaller pieces to comply with the API's token limit.
-* Generates audio files for each text chunk using OpenAI's TTS API.
-* Combines the generated audio chunks into a single output file.
-* Displays a spinning animation while generating audio to indicate progress.
-* Creates a directory with the same name as the input file to store the output and temporary files.
-* Removes temporary files after the final output file is generated.
-
-### Setup
-
-Before using ttsrs, make sure to set the `OPENAI_API_KEY` environment variable with your OpenAI API key.
-
-### Example
-
-The completed markdown string for your shell command (API Key is not functional) would look like this:
-
 ```bash
-ttsrs --apikey sk-m8xy4xZg7E5VgfRzTg7cY4HlckFJ92eKlH1zpqv5PQKTYUBl --voice alloy --model tts-1
+ttsrs [OPTIONS] <INPUT_FILE>
 ```
 
-Make sure to replace the API key with your actual key before executing the command. Enjoy using ttsrs!
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--model`, `-m` | TTS model to use | `tts-1-hd` |
+| `--voice`, `-v` | Voice selection | `alloy` |
+| `--format`, `-f` | Output audio format | `flac` |
+| `--apikey`, `-a` | OpenAI API key | - |
+
+### Voice Options
+
+Available voices with their characteristics:
+
+- **alloy** - A versatile, well-balanced voice
+- **echo** - Clear and professional, ideal for announcements
+- **fable** - Warm and engaging, perfect for storytelling
+- **onyx** - Deep and authoritative
+- **nova** - Young and energetic
+- **shimmer** - Soft and soothing
+
+### Audio Formats
+
+Supported output formats:
+- `flac` (default) - Lossless audio compression
+- `mp3` - Common compressed audio format
+- `wav` - Uncompressed audio
+- `pcm` - Raw audio data
+
+## Examples
+
+Basic usage:
+```bash
+ttsrs input.txt
+```
+
+Specifying voice and format:
+```bash
+ttsrs --voice nova --format mp3 input.txt
+```
+
+Using API key inline:
+```bash
+ttsrs --apikey sk-... --voice echo --format wav input.txt
+```
+
+## Environment Variables
+
+- `OPENAI_API_KEY`: Your OpenAI API key
+  ```bash
+  export OPENAI_API_KEY='your-api-key-here'
+  ```
+
+## Technical Details
+
+- Text is automatically chunked into segments of 500 tokens or less
+- Each chunk is processed separately and then combined
+- Temporary files are automatically cleaned up
+- Output is saved in a directory named after the input file
+
+## License
+
+MIT License
+
+## Acknowledgments
+
+Based on the [unofficial-openai-tts-cli](https://github.com/tom-huntington/unofficial-openai-tts-cli) Python project.
