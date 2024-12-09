@@ -1,3 +1,4 @@
+// Import necessary crates and modules
 use anyhow::{ Context, Result };
 use chrono::Local;
 use clap::Parser;
@@ -51,6 +52,7 @@ struct OpenAIError {
 /// The main function of the program.
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Parse command-line arguments
     let mut args = Args::parse();
 
     // Get the API key from either the command-line argument or the environment variable
@@ -108,6 +110,7 @@ async fn main() -> Result<()> {
         args.format = formats[selection].to_string();
     }
 
+    // Initialize HTTP client
     let client = Client::new();
 
     // Get the input file name and create an output directory
@@ -126,8 +129,17 @@ async fn main() -> Result<()> {
     let chunks = chunk_text(&lines);
 
     // Generate audio files for each chunk
-    generate_audio_files(&chunks, &output_dir, &args.model, &args.voice, &args.format, &client, &api_key).await?;
+    generate_audio_files(
+        &chunks,
+        &output_dir,
+        &args.model,
+        &args.voice,
+        &args.format,
+        &client,
+        &api_key
+    ).await?;
 
+    // Notify the user about the generated files
     println!(
         "Chunk flac files are already in [ ./{} ] for ffmpeg to combine.\n\n",
         green_text(input_file_name)
@@ -139,6 +151,7 @@ async fn main() -> Result<()> {
     // Remove temporary files
     remove_tmp(&output_dir)?;
 
+    // Final message
     println!("\nThe File [ {} ] is ready for you. \n", green_text(input_file_name));
 
     Ok(())
@@ -163,23 +176,29 @@ fn read_text_file(file_path: &Path) -> Result<Vec<String>> {
 
 // Chunks the input text into smaller pieces, each containing up to 500 tokens
 fn chunk_text(lines: &[String]) -> Vec<Vec<String>> {
+    // Initialize the tokenizer
     let bpe = cl100k_base().unwrap();
     let mut chunks = Vec::new();
     let mut current_chunk = Vec::new();
     let mut current_token_count = 0;
 
+    // Iterate over each line of text
     for line in lines {
+        // Calculate the number of tokens in the current line
         let line_token_count = bpe.encode_ordinary(line).len();
 
+        // If adding this line exceeds the token limit, start a new chunk
         if current_token_count + line_token_count > 500 {
             chunks.push(std::mem::take(&mut current_chunk));
             current_token_count = 0;
         }
 
+        // Add the line to the current chunk and update the token count
         current_chunk.push(line.clone());
         current_token_count += line_token_count;
     }
 
+    // Add any remaining lines as the last chunk
     if !current_chunk.is_empty() {
         chunks.push(current_chunk);
     }
@@ -197,9 +216,12 @@ async fn generate_audio_files(
     client: &Client,
     api_key: &str
 ) -> Result<()> {
+    // Generate a timestamp for file naming
     let date_time_string = Local::now().format("%Y%m%d%H%M").to_string();
 
+    // Iterate over each chunk
     for (i, chunk) in chunks.iter().enumerate() {
+        // Join the lines in the chunk into a single string
         let chunk_string = chunk.join(" ");
         println!("〰️〰️〰️〰️〰️〰️");
         println!(
@@ -210,6 +232,7 @@ async fn generate_audio_files(
         );
         println!("Input String: {}...", &chunk_string[..chunk_string.len().min(60)]);
 
+        // Check if the chunk exceeds the character limit
         if chunk_string.len() > 4000 {
             anyhow::bail!(
                 "Chunk {:06}: {} is more than 4000 characters, please make it shorter",
@@ -255,6 +278,7 @@ async fn generate_audio_files(
         let file_path = output_dir.join(&file_name);
         let mut file = File::create(&file_path)?;
 
+        // Stream the response and write it to the file
         let mut stream = response.bytes_stream();
         while let Some(item) = stream.next().await {
             file.write_all(&item?)?;
