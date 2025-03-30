@@ -62,6 +62,9 @@ Available voices with their characteristics:
 - **onyx** - Deep and authoritative
 - **nova** - Young and energetic
 - **shimmer** - Soft and soothing
+- **ballad** - New! 
+- **coral** - New!
+- **sage** - New!
 
 ### Audio Formats
 
@@ -90,7 +93,7 @@ ttsrs --apikey sk-... --voice echo --format wav input.txt
 
 ## Environment Variables
 
-- `OPENAI_API_KEY`: Your OpenAI API key
+- `OPENAI_API_KEY`: Your OpenAI API key  
   ```bash
   export OPENAI_API_KEY='your-api-key-here'
   ```
