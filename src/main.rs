@@ -29,9 +29,13 @@ struct Args {
     #[arg(short, long, default_value = "alloy")]
     voice: String,
 
-    /// Output audio format (options: mp3, flac, wav, pcm)
+    /// Output audio format (options: mp3, flac, wav, pcm, opus, aac)
     #[arg(short, long, default_value = "flac")]
     format: String,
+
+    /// Speaking speed (0.25 - 4.0, default 1.0)
+    #[arg(long, default_value = "1.0")]
+    speed: f32,
 
     /// OpenAI API key (optional, can also be set via the OPENAI_API_KEY environment variable)
     #[arg(short, long)]
@@ -83,12 +87,15 @@ async fn main() -> Result<()> {
 
     // Prompt for voice selection
     let voices = vec![
-        "Echo - A clear and bright voice ideal for announcements.",
-        "Fable - Great for storytelling.",
-        "Onyx - A deep and resonant voice.",
-        "Nova - A youthful and energetic voice.",
-        "Shimmer - A soft and soothing voice.",
-        "Alloy - A versatile and natural-sounding voice.",
+        "Echo - Clear and professional, ideal for announcements.",
+        "Fable - Warm and engaging, perfect for storytelling.",
+        "Onyx - Deep and authoritative.",
+        "Nova - Young and energetic.",
+        "Shimmer - Soft and soothing.",
+        "Alloy - Versatile and well-balanced.",
+        "Ballad - New!",
+        "Coral - New!",
+        "Sage - New!",
     ];
     if args.voice == "alloy" {
         let selection = Select::new()
@@ -100,7 +107,7 @@ async fn main() -> Result<()> {
     }
 
     // Prompt for output format
-    let formats = vec!["mp3", "flac", "wav", "pcm"];
+    let formats = vec!["mp3", "flac", "wav", "pcm", "opus", "aac"];
     if args.format == "flac" {
         let selection = Select::new()
             .with_prompt("Select an output format")
@@ -136,7 +143,8 @@ async fn main() -> Result<()> {
         &args.voice,
         &args.format,
         &client,
-        &api_key
+        &api_key,
+        args.speed
     ).await?;
 
     // Notify the user about the generated files
@@ -214,7 +222,8 @@ async fn generate_audio_files(
     voice: &str,
     format: &str,
     client: &Client,
-    api_key: &str
+    api_key: &str,
+    speed: f32
 ) -> Result<()> {
     // Generate a timestamp for file naming
     let date_time_string = Local::now().format("%Y%m%d%H%M").to_string();
@@ -259,10 +268,12 @@ async fn generate_audio_files(
             .header("Authorization", format!("Bearer {}", api_key))
             .json(
                 &serde_json::json!({
-                "model": model,
-                "voice": voice_lowercase,  // Use lowercase voice name
-                "input": chunk_string,
-            })
+                    "model": model,
+                    "voice": voice_lowercase,
+                    "input": chunk_string,
+                    "speed": speed,
+                    "response_format": format,
+                })
             )
             .send().await?;
 

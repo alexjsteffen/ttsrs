@@ -20,6 +20,7 @@ A Rust-based command-line tool for converting text to speech using OpenAI's TTS 
 - 🔊 High-quality text-to-speech conversion using OpenAI's API
 - 📝 Supports large text files through automatic chunking
 - 🎨 Multiple voice options and audio formats
+- ⚡ Adjustable speaking speed
 - 🔄 Interactive mode for selecting voices and formats
 - 📁 Organized output with automatic file management
 - 🚀 Progress indicators during conversion
@@ -50,6 +51,7 @@ ttsrs [OPTIONS] <INPUT_FILE>
 | `--model`, `-m` | TTS model to use | `tts-1-hd` |
 | `--voice`, `-v` | Voice selection | `alloy` |
 | `--format`, `-f` | Output audio format | `flac` |
+| `--speed` | Speaking speed (0.25 - 4.0) | `1.0` |
 | `--apikey`, `-a` | OpenAI API key | - |
 
 ### Voice Options
@@ -62,7 +64,7 @@ Available voices with their characteristics:
 - **onyx** - Deep and authoritative
 - **nova** - Young and energetic
 - **shimmer** - Soft and soothing
-- **ballad** - New! 
+- **ballad** - New!
 - **coral** - New!
 - **sage** - New!
 
@@ -73,6 +75,8 @@ Supported output formats:
 - `mp3` - Common compressed audio format
 - `wav` - Uncompressed audio
 - `pcm` - Raw audio data
+- `opus` - New! High-quality compressed audio
+- `aac` - New! Widely supported compressed audio
 
 ## Examples
 
@@ -81,14 +85,14 @@ Basic usage:
 ttsrs input.txt
 ```
 
-Specifying voice and format:
+Specifying voice, format, and speed:
 ```bash
-ttsrs --voice nova --format mp3 input.txt
+ttsrs --voice nova --format mp3 --speed 1.2 input.txt
 ```
 
 Using API key inline:
 ```bash
-ttsrs --apikey sk-... --voice echo --format wav input.txt
+ttsrs --apikey sk-... --voice echo --format wav --speed 0.9 input.txt
 ```
 
 ## Environment Variables
@@ -104,6 +108,8 @@ ttsrs --apikey sk-... --voice echo --format wav input.txt
 - Each chunk is processed separately and then combined
 - Temporary files are automatically cleaned up
 - Output is saved in a directory named after the input file
+- Supports adjustable speaking speed via `--speed`
+- Supports new OpenAI voices and audio formats
 
 ## License
 
