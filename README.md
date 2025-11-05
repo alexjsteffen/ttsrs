@@ -165,6 +165,24 @@ ttsrs --provider elevenlabs --elevenlabs-voice-id "your-voice-id" input.txt
 - `OPENAI_API_KEY`: Your OpenAI API key. The `--apikey` flag takes precedence if both are set.
 - `ELEVENLABS_API_KEY`: Your ElevenLabs API key. The `--apikey` flag takes precedence if both are set.
 
+## Configuration File
+
+ttsrs supports storing API keys in a configuration file for convenience. When you provide an API key via prompt (not through the command line or environment variable), it will be automatically saved to `.ttsrs_config.json` in the current directory for future use.
+
+The configuration file has the following structure:
+```json
+{
+  "openai_api_key": "your-openai-api-key",
+  "elevenlabs_api_key": "your-elevenlabs-api-key"
+}
+```
+
+Priority order for API keys:
+1. Command-line flag (`--apikey`)
+2. Environment variable (`OPENAI_API_KEY` or `ELEVENLABS_API_KEY`)
+3. Configuration file (`.ttsrs_config.json`)
+4. Interactive prompt (will save to config file)
+
 ## Technical Details
 
 - Text is automatically chunked based on token count (using `tiktoken_rs` with `cl100k_base`) to stay within API limits (approx. 500 tokens per chunk).
