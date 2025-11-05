@@ -32,6 +32,43 @@ jobs:
                - name: Build
                  run: cargo build --release
 
+               - name: Import Code Signing Certificate (macOS)
+                 if: runner.os == 'macOS'
+                 env:
+                      CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE }}
+                      CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+                      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+                 run: |
+                      # Create variables
+                      CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+                      KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+                      # Decode certificate from base64
+                      echo "$CERTIFICATE_BASE64" | base64 --decode > $CERTIFICATE_PATH
+
+                      # Create temporary keychain
+                      security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+                      security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+                      security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+                      # Import certificate to keychain
+                      security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+                      security list-keychain -d user -s $KEYCHAIN_PATH
+
+                      # Allow codesign to use the certificate
+                      security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+               - name: Code Sign Binary (macOS)
+                 if: runner.os == 'macOS'
+                 env:
+                      CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
+                 run: |
+                      # Sign the binary
+                      codesign --force --sign "$CODESIGN_IDENTITY" --timestamp --options runtime target/release/ttsrs
+                      
+                      # Verify the signature
+                      codesign --verify --verbose=4 target/release/ttsrs
+
                - name: Upload artifact
                  uses: actions/upload-artifact@v4
                  with:
@@ -39,3 +76,8 @@ jobs:
                       path: |
                            target/release/ttsrs
                            target/release/ttsrs.exe
+
+               - name: Cleanup Keychain (macOS)
+                 if: runner.os == 'macOS' && always()
+                 run: |
+                      security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
