@@ -60,10 +60,6 @@ Copy the entire string including the quotes.
 | `KEYCHAIN_PASSWORD` | A strong random password | Used for the temporary keychain (generate a random one) |
 | `CODESIGN_IDENTITY` | Your identity string | The full identity string from Step 3, e.g., `"Developer ID Application: Your Name (TEAM_ID)"` |
 
-### Example Screenshot Locations:
-
-- **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
-
 ## Step 5: Verify the Setup
 
 Once you've added all the secrets:
