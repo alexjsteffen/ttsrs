@@ -104,7 +104,7 @@ Supported output formats (may vary depending on the endpoint):
 Supported output formats:
 - `mp3_44100_64`, `mp3_44100_96`, `mp3_44100_128` (default), `mp3_44100_192` - MP3 at different bitrates
 - `pcm_16000`, `pcm_22050`, `pcm_24000`, `pcm_44100` - PCM at different sample rates
-- `ulaw_8000` - 8kHz μ-law encoding
+- `ulaw_8000` - 8kHz μ-law encoding (saved as .wav files)
 
 ## Examples
 

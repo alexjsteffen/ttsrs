@@ -217,7 +217,8 @@ async fn main() -> Result<()> {
         match provider {
             TtsProvider::OpenAI => "https://api.openai.com/v1/audio/speech".to_string(),
             TtsProvider::ElevenLabs => {
-                let voice_id = args.elevenlabs_voice_id.as_ref().unwrap();
+                let voice_id = args.elevenlabs_voice_id.as_ref()
+                    .context("ElevenLabs voice ID is required when using ElevenLabs provider. Use --elevenlabs-voice-id")?;
                 format!("https://api.elevenlabs.io/v1/text-to-speech/{}", voice_id)
             }
         }
@@ -384,17 +385,20 @@ async fn generate_audio_files(
             &chunk_string[..chunk_string.len().min(60)]
         );
 
-        // Check if the chunk exceeds the character limit (OpenAI specific limit)
-        const MAX_CHARS_PER_CHUNK: usize = 4096; // Use OpenAI's documented limit
-        if chunk_string.len() > MAX_CHARS_PER_CHUNK {
+        // Check if the chunk exceeds the character limit (provider-specific limit)
+        let max_chars = match provider {
+            TtsProvider::OpenAI => 4096,      // OpenAI's documented limit
+            TtsProvider::ElevenLabs => 5000,  // ElevenLabs has a 5000 character limit
+        };
+        if chunk_string.len() > max_chars {
             eprintln!( // Use eprintln for errors
                 "Warning: Chunk {:06} exceeds {} characters ({}). Attempting to process, but it might fail.",
                 i + 1,
-                MAX_CHARS_PER_CHUNK,
+                max_chars,
                 chunk_string.len()
             );
             // Optionally, you could truncate here:
-            // chunk_string = chunk_string[..MAX_CHARS_PER_CHUNK].to_string();
+            // chunk_string = chunk_string[..max_chars].to_string();
             // Or skip the chunk: continue;
             // Or return an error: anyhow::bail!(...)
         }
