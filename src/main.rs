@@ -136,10 +136,8 @@ async fn main() -> Result<()> {
             "Shimmer - Soft and soothing.",
             "Alloy - Versatile and well-balanced.",
             "Ash - Clear and conversational.",
-            "Ballad - Smooth and expressive.",
             "Coral - Warm and friendly.",
             "Sage - Calm and measured.",
-            "Verse - Natural and articulate.",
         ];
         if args.voice.to_lowercase() == "alloy" {
             // Only prompt if default is used (case-insensitive comparison)
@@ -581,14 +579,15 @@ fn combine_audio_files(output_dir: &Path, format: &str, timestamp: &str, voice: 
         // Scope for file handle to ensure it's closed before ffmpeg runs
         let mut list_file = File::create(&list_file_path)?;
         for input_file in &input_files {
-            // Ensure paths are properly quoted/escaped if needed, especially on Windows
-            // For simplicity here, assuming paths don't contain problematic characters.
-            // A robust solution might involve more complex path handling.
+            // Use only the filename (not the full path) since ffmpeg_list.txt is in the same directory
+            let filename = input_file.file_name()
+                .and_then(|name| name.to_str())
+                .context("Failed to get filename")?;
             writeln!(
                 list_file,
                 "file '{}'",
-                input_file.to_str().unwrap().replace('\\', "/")
-            )?; // Use forward slashes
+                filename
+            )?;
         }
     } // list_file goes out of scope and is closed
 

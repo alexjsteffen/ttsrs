@@ -66,7 +66,7 @@ ttsrs [OPTIONS] <INPUT_FILE>
 
 #### OpenAI Voices
 
-Available voices (may vary depending on the endpoint):
+Available voices (supported by OpenAI's TTS API):
 
 - **alloy** - A versatile, well-balanced voice
 - **echo** - Clear and professional, ideal for announcements
@@ -74,11 +74,9 @@ Available voices (may vary depending on the endpoint):
 - **onyx** - Deep and authoritative
 - **nova** - Young and energetic
 - **shimmer** - Soft and soothing
-- **ash** - Clear and conversational (New!)
-- **ballad** - Smooth and expressive (New!)
-- **coral** - Warm and friendly (New!)
-- **sage** - Calm and measured (New!)
-- **verse** - Natural and articulate (New!)
+- **ash** - Clear and conversational
+- **coral** - Warm and friendly
+- **sage** - Calm and measured
 
 #### ElevenLabs Voices
 
@@ -126,10 +124,10 @@ export OPENAI_API_KEY='your-api-key-here'
 ttsrs --voice echo --format wav input.txt
 ```
 
-Using the new OpenAI voices:
+Using different OpenAI voices:
 ```bash
 ttsrs --voice ash --format mp3 input.txt
-ttsrs --voice verse --format opus input.txt
+ttsrs --voice coral --format opus input.txt
 ```
 
 Using a custom endpoint URL (e.g., for a local LM Studio instance):
