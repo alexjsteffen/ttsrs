@@ -83,6 +83,7 @@ Once you've added all the secrets:
 
 - Double-check that `CODESIGN_IDENTITY` exactly matches the output from `security find-identity`
 - Ensure the identity string includes quotes if they're part of the identity name
+- Verify that the temporary keychain is in the keychain search list along with the login keychain (the workflow handles this automatically)
 
 ### Error: "The specified item could not be found in the keychain"
 

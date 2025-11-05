@@ -53,7 +53,9 @@ jobs:
 
                       # Import certificate to keychain
                       security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-                      security list-keychain -d user -s $KEYCHAIN_PATH
+                      
+                      # Add keychain to search list (including login keychain)
+                      security list-keychain -d user -s $KEYCHAIN_PATH $(security list-keychains -d user | sed s/\"//g)
 
                       # Allow codesign to use the certificate
                       security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
