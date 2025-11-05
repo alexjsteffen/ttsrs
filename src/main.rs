@@ -93,8 +93,8 @@ async fn main() -> Result<()> {
         "Coral - New!",
         "Sage - New!",
     ];
-    if args.voice == "alloy" {
-        // Only prompt if default is used
+    if args.voice.to_lowercase() == "alloy" {
+        // Only prompt if default is used (case-insensitive comparison)
         let selection = Select::new()
             .with_prompt("Select a voice")
             .items(&voices)
@@ -111,8 +111,8 @@ async fn main() -> Result<()> {
 
     // Prompt for output format
     let formats = vec!["mp3", "flac", "wav", "pcm", "opus", "aac"];
-    if args.format == "flac" {
-        // Only prompt if default is used
+    if args.format.to_lowercase() == "flac" {
+        // Only prompt if default is used (case-insensitive comparison)
         let selection = Select::new()
             .with_prompt("Select an output format")
             .items(&formats)
@@ -149,7 +149,7 @@ async fn main() -> Result<()> {
         .unwrap_or("https://api.openai.com/v1/audio/speech"); // Use custom URL or default
 
     // Generate audio files for each chunk
-    generate_audio_files(
+    let (timestamp, voice_used) = generate_audio_files(
         &chunks,
         &output_dir,
         &args.model,
@@ -170,10 +170,10 @@ async fn main() -> Result<()> {
     );
 
     // Combine the audio files into a single output file
-    combine_audio_files(&output_dir, &args.format)?; //
+    combine_audio_files(&output_dir, &args.format, &timestamp, &voice_used)?; //
 
     // Remove temporary files
-    remove_tmp(&output_dir, &args.format)?; // Pass format to remove correct tmp files
+    remove_tmp(&output_dir, &args.format, &timestamp, &voice_used)?; // Pass timestamp and voice to remove correct tmp files
 
     // Final message
     println!(
@@ -252,6 +252,8 @@ fn chunk_text(lines: &[String]) -> Vec<Vec<String>> {
 }
 
 // Generates audio files for each chunk of text using the specified API endpoint
+// Returns (timestamp, voice_lowercase) for identifying the generated files
+#[allow(clippy::too_many_arguments)]
 async fn generate_audio_files(
     chunks: &[Vec<String>],
     output_dir: &Path,
@@ -262,12 +264,12 @@ async fn generate_audio_files(
     api_key: &str,
     speed: f32,
     api_endpoint: &str, // Accept the API endpoint URL
-) -> Result<()> {
+) -> Result<(String, String)> {
     //
-    // Generate a timestamp for file naming
-    let date_time_string = Local::now().format("%Y%m%d%H%M").to_string();
+    // Generate a timestamp for file naming with seconds for better uniqueness
+    let date_time_string = Local::now().format("%Y%m%d%H%M%S").to_string();
 
-    // Convert voice name to lowercase for API call
+    // Convert voice name to lowercase for API call and filename
     let voice_lowercase = voice.to_lowercase();
 
     // Iterate over each chunk
@@ -276,9 +278,9 @@ async fn generate_audio_files(
         let chunk_string = chunk.join(" ");
         println!("〰️〰️〰️〰️〰️〰️");
         println!(
-            "{} {} of {}",
+            "{} {:06} of {}",
             green_text("Processing chunk"), // Changed message slightly
-            format!("{:06}", i + 1),
+            i + 1,
             chunks.len()
         );
         println!(
@@ -366,8 +368,8 @@ async fn generate_audio_files(
             // anyhow::bail!("API error for chunk {}: Status Code: {}. Response: {}", i+1, status, error_text);
         }
 
-        // Save the audio response to a file
-        let file_name = format!("tmp_{}_chunk{:06}.{}", date_time_string, i + 1, format);
+        // Save the audio response to a file with voice and timestamp for uniqueness
+        let file_name = format!("tmp_{}_{}_chunk{:06}.{}", date_time_string, voice_lowercase, i + 1, format);
         let file_path = output_dir.join(&file_name);
 
         // Stream the response and write it to the file
@@ -402,14 +404,15 @@ async fn generate_audio_files(
         }
     }
 
-    Ok(())
+    Ok((date_time_string, voice_lowercase))
 }
 
 /// Combines all the generated temporary audio files into a single file using ffmpeg.
-fn combine_audio_files(output_dir: &Path, format: &str) -> Result<()> {
+fn combine_audio_files(output_dir: &Path, format: &str, timestamp: &str, voice: &str) -> Result<()> {
     //
-    // Collect all the temporary files of the specified format in the output directory
+    // Collect all the temporary files for this specific run (matching timestamp, voice, and format)
     let mut input_files = Vec::new();
+    let prefix = format!("tmp_{}_{}_", timestamp, voice);
     for entry in fs::read_dir(output_dir)? {
         let entry = entry?;
         let path = entry.path();
@@ -420,7 +423,7 @@ fn combine_audio_files(output_dir: &Path, format: &str) -> Result<()> {
                 .unwrap_or(false) &&
             path.file_name()
                 .and_then(|name| name.to_str()) // Safely get filename as str
-                .map(|name_str| name_str.starts_with("tmp_")) // Check prefix
+                .map(|name_str| name_str.starts_with(&prefix)) // Check for specific prefix with timestamp and voice
                 .unwrap_or(false)
         {
             input_files.push(path);
@@ -504,10 +507,11 @@ fn combine_audio_files(output_dir: &Path, format: &str) -> Result<()> {
     Ok(())
 }
 
-/// Removes temporary files from the output directory matching the specified format.
-fn remove_tmp(output_dir: &Path, format: &str) -> Result<()> {
+/// Removes temporary files from the output directory matching the specified format, timestamp, and voice.
+fn remove_tmp(output_dir: &Path, format: &str, timestamp: &str, voice: &str) -> Result<()> {
     //
     let mut removed_count = 0;
+    let prefix = format!("tmp_{}_{}_", timestamp, voice);
     for entry in fs::read_dir(output_dir)? {
         let entry = entry?;
         let path = entry.path();
@@ -515,7 +519,7 @@ fn remove_tmp(output_dir: &Path, format: &str) -> Result<()> {
             && path
                 .file_name()
                 .and_then(|name| name.to_str())
-                .map(|name_str| name_str.starts_with("tmp_"))
+                .map(|name_str| name_str.starts_with(&prefix))
                 .unwrap_or(false)
             && path.extension().and_then(|ext| ext.to_str()) == Some(format)
         {
