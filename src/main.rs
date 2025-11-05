@@ -6,9 +6,10 @@ use dialoguer::{Input, Select};
 use futures::stream::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tiktoken_rs::cl100k_base;
 
@@ -17,6 +18,57 @@ use tiktoken_rs::cl100k_base;
 enum TtsProvider {
     OpenAI,
     ElevenLabs,
+}
+
+// Configuration structure for storing API keys
+#[derive(Debug, Serialize, Deserialize, Default)]
+struct Config {
+    openai_api_key: Option<String>,
+    elevenlabs_api_key: Option<String>,
+}
+
+impl Config {
+    /// Get the path to the config file in the current directory
+    fn config_path() -> PathBuf {
+        PathBuf::from(".ttsrs_config.json")
+    }
+
+    /// Load the config from the file, or return a default config if it doesn't exist
+    fn load() -> Result<Self> {
+        let config_path = Self::config_path();
+        if config_path.exists() {
+            let contents = fs::read_to_string(&config_path)?;
+            let config: Config = serde_json::from_str(&contents)?;
+            Ok(config)
+        } else {
+            Ok(Config::default())
+        }
+    }
+
+    /// Save the config to the file
+    fn save(&self) -> Result<()> {
+        let config_path = Self::config_path();
+        let json = serde_json::to_string_pretty(self)?;
+        let mut file = File::create(&config_path)?;
+        file.write_all(json.as_bytes())?;
+        Ok(())
+    }
+
+    /// Get the API key for the specified provider
+    fn get_api_key(&self, provider: &TtsProvider) -> Option<String> {
+        match provider {
+            TtsProvider::OpenAI => self.openai_api_key.clone(),
+            TtsProvider::ElevenLabs => self.elevenlabs_api_key.clone(),
+        }
+    }
+
+    /// Set the API key for the specified provider
+    fn set_api_key(&mut self, provider: &TtsProvider, api_key: String) {
+        match provider {
+            TtsProvider::OpenAI => self.openai_api_key = Some(api_key),
+            TtsProvider::ElevenLabs => self.elevenlabs_api_key = Some(api_key),
+        }
+    }
 }
 
 // Define command-line arguments using the clap crate
@@ -87,13 +139,21 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Get the API key from either the command-line argument or the environment variable
+    // Load config file
+    let mut config = Config::load().unwrap_or_default();
+
+    // Get the API key from command-line, environment variable, config file, or prompt
     let api_key = args.apikey.clone()
         .or_else(|| {
+            // Try environment variable
             match provider {
                 TtsProvider::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
                 TtsProvider::ElevenLabs => std::env::var("ELEVENLABS_API_KEY").ok(),
             }
+        })
+        .or_else(|| {
+            // Try config file
+            config.get_api_key(&provider)
         })
         .or_else(|| {
             // Prompt the user for the API key if not provided
@@ -105,6 +165,15 @@ async fn main() -> Result<()> {
                 .with_prompt(prompt)
                 .interact_text()
                 .ok()?;
+            
+            // Save the API key to the config file for future use
+            config.set_api_key(&provider, input.clone());
+            if let Err(e) = config.save() {
+                eprintln!("Warning: Failed to save API key to config file (.ttsrs_config.json): {}", e);
+            } else {
+                println!("API key saved to config file (.ttsrs_config.json) for future use.");
+            }
+            
             Some(input)
         })
         .context(
@@ -266,7 +335,7 @@ async fn main() -> Result<()> {
 
     // Final message
     println!(
-        "\nThe File [ {}.{} ] is ready for you. \n",
+        "\nThe File [ {}/output.{} ] is ready for you. \n",
         green_text(input_file_name),
         output_ext
     );
