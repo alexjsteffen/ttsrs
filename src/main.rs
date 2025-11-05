@@ -8,7 +8,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
-use std::io::{Write, Read};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tiktoken_rs::cl100k_base;
@@ -37,9 +37,7 @@ impl Config {
     fn load() -> Result<Self> {
         let config_path = Self::config_path();
         if config_path.exists() {
-            let mut file = File::open(&config_path)?;
-            let mut contents = String::new();
-            file.read_to_string(&mut contents)?;
+            let contents = fs::read_to_string(&config_path)?;
             let config: Config = serde_json::from_str(&contents)?;
             Ok(config)
         } else {
@@ -171,9 +169,9 @@ async fn main() -> Result<()> {
             // Save the API key to the config file for future use
             config.set_api_key(&provider, input.clone());
             if let Err(e) = config.save() {
-                eprintln!("Warning: Failed to save config file: {}", e);
+                eprintln!("Warning: Failed to save API key to config file (.ttsrs_config.json): {}", e);
             } else {
-                println!("API key saved to config file for future use.");
+                println!("API key saved to config file (.ttsrs_config.json) for future use.");
             }
             
             Some(input)
