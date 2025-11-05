@@ -12,6 +12,13 @@ use std::path::Path;
 use std::process::Command;
 use tiktoken_rs::cl100k_base;
 
+// Define the TTS provider
+#[derive(Debug, Clone, PartialEq)]
+enum TtsProvider {
+    OpenAI,
+    ElevenLabs,
+}
+
 // Define command-line arguments using the clap crate
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -43,6 +50,26 @@ struct Args {
     /// Custom API endpoint URL (optional, defaults to OpenAI)
     #[arg(long)]
     endpoint_url: Option<String>,
+
+    /// TTS provider (openai or elevenlabs, default: openai)
+    #[arg(long, default_value = "openai")]
+    provider: String,
+
+    /// ElevenLabs voice ID (required when using ElevenLabs provider)
+    #[arg(long)]
+    elevenlabs_voice_id: Option<String>,
+
+    /// ElevenLabs model ID (default: eleven_turbo_v2_5)
+    #[arg(long, default_value = "eleven_turbo_v2_5")]
+    elevenlabs_model: String,
+
+    /// ElevenLabs voice stability (0.0 - 1.0, default: 0.5)
+    #[arg(long, default_value = "0.5")]
+    elevenlabs_stability: f32,
+
+    /// ElevenLabs voice similarity boost (0.0 - 1.0, default: 0.75)
+    #[arg(long, default_value = "0.75")]
+    elevenlabs_similarity: f32,
 }
 
 /// The main function of the program.
@@ -51,19 +78,37 @@ async fn main() -> Result<()> {
     // Parse command-line arguments
     let mut args = Args::parse();
 
+    // Determine the TTS provider
+    let provider = match args.provider.to_lowercase().as_str() {
+        "openai" => TtsProvider::OpenAI,
+        "elevenlabs" => TtsProvider::ElevenLabs,
+        _ => {
+            anyhow::bail!("Invalid provider '{}'. Must be 'openai' or 'elevenlabs'", args.provider);
+        }
+    };
+
     // Get the API key from either the command-line argument or the environment variable
     let api_key = args.apikey.clone()
-        .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+        .or_else(|| {
+            match provider {
+                TtsProvider::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
+                TtsProvider::ElevenLabs => std::env::var("ELEVENLABS_API_KEY").ok(),
+            }
+        })
         .or_else(|| {
             // Prompt the user for the API key if not provided
+            let prompt = match provider {
+                TtsProvider::OpenAI => "Enter your OpenAI API Key",
+                TtsProvider::ElevenLabs => "Enter your ElevenLabs API Key",
+            };
             let input: String = Input::new()
-                .with_prompt("Enter your OpenAI API Key")
+                .with_prompt(prompt)
                 .interact_text()
                 .ok()?;
             Some(input)
         })
         .context(
-            "OpenAI API key not provided. Set it via the --apikey flag, the OPENAI_API_KEY environment variable, or input it when prompted."
+            "API key not provided. Set it via the --apikey flag, the appropriate environment variable, or input it when prompted."
         )?;
 
     // Prompt for input file if not provided
@@ -81,42 +126,65 @@ async fn main() -> Result<()> {
 
     args.input_file = Some(input_file);
 
-    // Prompt for voice selection
-    let voices = vec![
-        "Echo - Clear and professional, ideal for announcements.",
-        "Fable - Warm and engaging, perfect for storytelling.",
-        "Onyx - Deep and authoritative.",
-        "Nova - Young and energetic.",
-        "Shimmer - Soft and soothing.",
-        "Alloy - Versatile and well-balanced.",
-        "Ballad - New!",
-        "Coral - New!",
-        "Sage - New!",
-    ];
-    if args.voice.to_lowercase() == "alloy" {
-        // Only prompt if default is used (case-insensitive comparison)
-        let selection = Select::new()
-            .with_prompt("Select a voice")
-            .items(&voices)
-            .default(5) // Set default index for Alloy
-            .interact()?;
-        // Extract only the voice name before the hyphen
-        args.voice = voices[selection]
-            .split(" - ")
-            .next()
-            .unwrap_or("alloy")
-            .to_lowercase()
-            .to_string();
+    // Prompt for voice selection (for OpenAI only, ElevenLabs uses voice_id)
+    if provider == TtsProvider::OpenAI {
+        let voices = vec![
+            "Echo - Clear and professional, ideal for announcements.",
+            "Fable - Warm and engaging, perfect for storytelling.",
+            "Onyx - Deep and authoritative.",
+            "Nova - Young and energetic.",
+            "Shimmer - Soft and soothing.",
+            "Alloy - Versatile and well-balanced.",
+            "Ash - Clear and conversational.",
+            "Ballad - Smooth and expressive.",
+            "Coral - Warm and friendly.",
+            "Sage - Calm and measured.",
+            "Verse - Natural and articulate.",
+        ];
+        if args.voice.to_lowercase() == "alloy" {
+            // Only prompt if default is used (case-insensitive comparison)
+            let selection = Select::new()
+                .with_prompt("Select a voice")
+                .items(&voices)
+                .default(5) // Set default index for Alloy
+                .interact()?;
+            // Extract only the voice name before the hyphen
+            args.voice = voices[selection]
+                .split(" - ")
+                .next()
+                .unwrap_or("alloy")
+                .to_lowercase()
+                .to_string();
+        }
+    } else {
+        // For ElevenLabs, ensure voice_id is provided
+        if args.elevenlabs_voice_id.is_none() {
+            let input: String = Input::new()
+                .with_prompt("Enter the ElevenLabs voice ID (or run with --elevenlabs-voice-id)")
+                .interact_text()?;
+            args.elevenlabs_voice_id = Some(input);
+        }
     }
 
     // Prompt for output format
-    let formats = vec!["mp3", "flac", "wav", "pcm", "opus", "aac"];
-    if args.format.to_lowercase() == "flac" {
-        // Only prompt if default is used (case-insensitive comparison)
+    let formats = match provider {
+        TtsProvider::OpenAI => vec!["mp3", "flac", "wav", "pcm", "opus", "aac"],
+        TtsProvider::ElevenLabs => vec!["mp3_44100_128", "mp3_44100_192", "pcm_16000", "pcm_22050", "pcm_24000", "pcm_44100"],
+    };
+    
+    // For ElevenLabs, set default format if using the OpenAI default
+    if provider == TtsProvider::ElevenLabs && args.format.to_lowercase() == "flac" {
+        args.format = "mp3_44100_128".to_string();
+    }
+    
+    if (provider == TtsProvider::OpenAI && args.format.to_lowercase() == "flac") ||
+       (provider == TtsProvider::ElevenLabs && args.format == "mp3_44100_128") {
+        // Only prompt if default is used
+        let default_idx = if provider == TtsProvider::OpenAI { 1 } else { 0 };
         let selection = Select::new()
             .with_prompt("Select an output format")
             .items(&formats)
-            .default(1) // Set default index for flac
+            .default(default_idx)
             .interact()?;
         args.format = formats[selection].to_string();
     }
@@ -143,10 +211,18 @@ async fn main() -> Result<()> {
     let chunks = chunk_text(&lines); //
 
     // Determine the API endpoint URL
-    let api_endpoint = args
-        .endpoint_url
-        .as_deref()
-        .unwrap_or("https://api.openai.com/v1/audio/speech"); // Use custom URL or default
+    let api_endpoint = if let Some(custom_url) = args.endpoint_url.as_deref() {
+        custom_url.to_string()
+    } else {
+        match provider {
+            TtsProvider::OpenAI => "https://api.openai.com/v1/audio/speech".to_string(),
+            TtsProvider::ElevenLabs => {
+                let voice_id = args.elevenlabs_voice_id.as_ref()
+                    .context("ElevenLabs voice ID is required when using ElevenLabs provider. Use --elevenlabs-voice-id")?;
+                format!("https://api.elevenlabs.io/v1/text-to-speech/{}", voice_id)
+            }
+        }
+    };
 
     // Generate audio files for each chunk
     let (timestamp, voice_used) = generate_audio_files(
@@ -158,7 +234,11 @@ async fn main() -> Result<()> {
         &client,
         &api_key,
         args.speed,
-        api_endpoint, // Pass the determined endpoint URL
+        &api_endpoint, // Pass the determined endpoint URL
+        &provider,
+        &args.elevenlabs_model,
+        args.elevenlabs_stability,
+        args.elevenlabs_similarity,
     )
     .await?; //
 
@@ -169,17 +249,28 @@ async fn main() -> Result<()> {
         green_text(input_file_name)
     );
 
+    // Determine the output file extension
+    let output_ext = if args.format.starts_with("mp3") {
+        "mp3"
+    } else if args.format.starts_with("pcm") {
+        "pcm"
+    } else if args.format.starts_with("ulaw") {
+        "wav"
+    } else {
+        &args.format
+    };
+
     // Combine the audio files into a single output file
-    combine_audio_files(&output_dir, &args.format, &timestamp, &voice_used)?; //
+    combine_audio_files(&output_dir, output_ext, &timestamp, &voice_used)?; //
 
     // Remove temporary files
-    remove_tmp(&output_dir, &args.format, &timestamp, &voice_used)?; // Pass timestamp and voice to remove correct tmp files
+    remove_tmp(&output_dir, output_ext, &timestamp, &voice_used)?; // Pass timestamp and voice to remove correct tmp files
 
     // Final message
     println!(
         "\nThe File [ {}.{} ] is ready for you. \n",
         green_text(input_file_name),
-        args.format
+        output_ext
     );
 
     Ok(())
@@ -266,6 +357,10 @@ async fn generate_audio_files(
     api_key: &str,
     speed: f32,
     api_endpoint: &str, // Accept the API endpoint URL
+    provider: &TtsProvider,
+    elevenlabs_model: &str,
+    elevenlabs_stability: f32,
+    elevenlabs_similarity: f32,
 ) -> Result<(String, String)> {
     //
     // Generate a timestamp for file naming with seconds for better uniqueness
@@ -290,17 +385,20 @@ async fn generate_audio_files(
             &chunk_string[..chunk_string.len().min(60)]
         );
 
-        // Check if the chunk exceeds the character limit (OpenAI specific limit)
-        const MAX_CHARS_PER_CHUNK: usize = 4096; // Use OpenAI's documented limit
-        if chunk_string.len() > MAX_CHARS_PER_CHUNK {
+        // Check if the chunk exceeds the character limit (provider-specific limit)
+        let max_chars = match provider {
+            TtsProvider::OpenAI => 4096,      // OpenAI's documented limit
+            TtsProvider::ElevenLabs => 5000,  // ElevenLabs has a 5000 character limit
+        };
+        if chunk_string.len() > max_chars {
             eprintln!( // Use eprintln for errors
                 "Warning: Chunk {:06} exceeds {} characters ({}). Attempting to process, but it might fail.",
                 i + 1,
-                MAX_CHARS_PER_CHUNK,
+                max_chars,
                 chunk_string.len()
             );
             // Optionally, you could truncate here:
-            // chunk_string = chunk_string[..MAX_CHARS_PER_CHUNK].to_string();
+            // chunk_string = chunk_string[..max_chars].to_string();
             // Or skip the chunk: continue;
             // Or return an error: anyhow::bail!(...)
         }
@@ -315,17 +413,34 @@ async fn generate_audio_files(
         pb.set_message(format!("Sending chunk {} to API...", i + 1)); // More specific message
 
         // Make the API request to the specified endpoint
-        let request_body = serde_json::json!({
-            "model": model,
-            "voice": voice_lowercase,
-            "input": chunk_string,
-            "speed": speed,
-            "response_format": format,
-        });
+        let (request_body, auth_header) = match provider {
+            TtsProvider::OpenAI => {
+                let body = serde_json::json!({
+                    "model": model,
+                    "voice": voice_lowercase,
+                    "input": chunk_string,
+                    "speed": speed,
+                    "response_format": format,
+                });
+                (body, ("Authorization".to_string(), format!("Bearer {}", api_key)))
+            }
+            TtsProvider::ElevenLabs => {
+                let body = serde_json::json!({
+                    "text": chunk_string,
+                    "model_id": elevenlabs_model,
+                    "voice_settings": {
+                        "stability": elevenlabs_stability,
+                        "similarity_boost": elevenlabs_similarity,
+                    }
+                });
+                (body, ("xi-api-key".to_string(), api_key.to_string()))
+            }
+        };
 
         let response = client
             .post(api_endpoint) // Use the passed endpoint URL
-            .header("Authorization", format!("Bearer {}", api_key))
+            .header(&auth_header.0, &auth_header.1)
+            .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
             .await;
@@ -371,7 +486,17 @@ async fn generate_audio_files(
         }
 
         // Save the audio response to a file with voice and timestamp for uniqueness
-        let file_name = format!("tmp_{}_{}_chunk{:06}.{}", date_time_string, voice_lowercase, i + 1, format);
+        // Extract the file extension based on format
+        let file_ext = if format.starts_with("mp3") {
+            "mp3"
+        } else if format.starts_with("pcm") {
+            "pcm"
+        } else if format.starts_with("ulaw") {
+            "wav" // ulaw is typically in wav container
+        } else {
+            format
+        };
+        let file_name = format!("tmp_{}_{}_chunk{:06}.{}", date_time_string, voice_lowercase, i + 1, file_ext);
         let file_path = output_dir.join(&file_name);
 
         // Stream the response and write it to the file
