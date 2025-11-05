@@ -26,12 +26,6 @@ A Rust-based command-line tool for converting text to speech using OpenAI's TTS 
 - 📁 Organized output with automatic file management
 - 🚀 Progress indicators during conversion
 
-## Installation
-
-```bash
-cargo install ttsrs
-```
-
 ## Prerequisites
 
 - Rust (latest stable version)
