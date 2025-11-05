@@ -195,6 +195,12 @@ Priority order for API keys:
 - **ElevenLabs**: Supports voice stability and similarity boost settings, with multiple models and formats.
 - Both providers can work with custom endpoints via `--endpoint-url`.
 
+## Development
+
+### Code Signing (macOS)
+
+macOS builds are automatically code-signed in GitHub Actions using an Apple Developer certificate. For information on setting up code signing for your fork or development environment, see [CODESIGNING_SETUP.md](CODESIGNING_SETUP.md).
+
 ## License
 
 MIT License
