@@ -253,6 +253,8 @@ fn chunk_text(lines: &[String]) -> Vec<Vec<String>> {
 
 // Generates audio files for each chunk of text using the specified API endpoint
 // Returns (timestamp, voice_lowercase) for identifying the generated files
+// Note: clippy::too_many_arguments is allowed here because these parameters represent
+// distinct configuration options that are most clearly expressed as separate arguments
 #[allow(clippy::too_many_arguments)]
 async fn generate_audio_files(
     chunks: &[Vec<String>],
