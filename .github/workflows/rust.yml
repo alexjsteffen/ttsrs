@@ -62,14 +62,34 @@ jobs:
 
                - name: Code Sign Binary (macOS)
                  if: runner.os == 'macOS'
-                 env:
-                      CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
                  run: |
+                      set -e
+                      set -o pipefail
+                      
+                      # List available signing identities
+                      echo "Available signing identities:"
+                      security find-identity -v -p codesigning
+                      
+                      # Get the identity hash from the keychain
+                      # First try to find any valid codesigning identity
+                      IDENTITY=$(security find-identity -v -p codesigning | grep -E "Developer|Distribution|iPhone" | head -1 | grep -oE '[0-9A-Fa-f]{40}')
+                      
+                      if [ -z "$IDENTITY" ]; then
+                        echo "Error: No code signing identity found"
+                        echo "Listing all identities in keychain:"
+                        security find-identity -v
+                        exit 1
+                      fi
+                      
+                      echo "Using identity: $IDENTITY"
+                      
                       # Sign the binary
-                      codesign --force --sign "$CODESIGN_IDENTITY" --timestamp --options runtime target/release/ttsrs
+                      codesign --force --sign "$IDENTITY" --timestamp --options runtime target/release/ttsrs
                       
                       # Verify the signature
                       codesign --verify --verbose=4 target/release/ttsrs
+                      
+                      echo "Code signing completed successfully"
 
                - name: Upload artifact
                  uses: actions/upload-artifact@v4
