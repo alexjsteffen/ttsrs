@@ -63,6 +63,9 @@ jobs:
                - name: Code Sign Binary (macOS)
                  if: runner.os == 'macOS'
                  run: |
+                      set -e
+                      set -o pipefail
+                      
                       # List available signing identities
                       echo "Available signing identities:"
                       security find-identity -v -p codesigning
