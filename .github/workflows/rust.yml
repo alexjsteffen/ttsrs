@@ -68,7 +68,7 @@ jobs:
                       security find-identity -v -p codesigning
                       
                       # Get the identity hash from the keychain
-                      IDENTITY=$(security find-identity -v -p codesigning | grep "Developer" | head -1 | grep -o '[0-9A-F]\{40\}')
+                      IDENTITY=$(security find-identity -v -p codesigning | grep -E "Developer|Distribution" | head -1 | grep -oE '[0-9A-Fa-f]{40}')
                       
                       if [ -z "$IDENTITY" ]; then
                         echo "Error: No code signing identity found"
