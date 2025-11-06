@@ -68,10 +68,13 @@ jobs:
                       security find-identity -v -p codesigning
                       
                       # Get the identity hash from the keychain
-                      IDENTITY=$(security find-identity -v -p codesigning | grep -E "Developer|Distribution" | head -1 | grep -oE '[0-9A-Fa-f]{40}')
+                      # First try to find any valid codesigning identity
+                      IDENTITY=$(security find-identity -v -p codesigning | grep -E "Developer|Distribution|iPhone" | head -1 | grep -oE '[0-9A-Fa-f]{40}')
                       
                       if [ -z "$IDENTITY" ]; then
                         echo "Error: No code signing identity found"
+                        echo "Listing all identities in keychain:"
+                        security find-identity -v
                         exit 1
                       fi
                       
@@ -82,6 +85,8 @@ jobs:
                       
                       # Verify the signature
                       codesign --verify --verbose=4 target/release/ttsrs
+                      
+                      echo "Code signing completed successfully"
 
                - name: Upload artifact
                  uses: actions/upload-artifact@v4
