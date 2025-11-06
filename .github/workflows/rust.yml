@@ -62,11 +62,23 @@ jobs:
 
                - name: Code Sign Binary (macOS)
                  if: runner.os == 'macOS'
-                 env:
-                      CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
                  run: |
+                      # List available signing identities
+                      echo "Available signing identities:"
+                      security find-identity -v -p codesigning
+                      
+                      # Get the identity hash from the keychain
+                      IDENTITY=$(security find-identity -v -p codesigning | grep "Developer" | head -1 | grep -o '[0-9A-F]\{40\}')
+                      
+                      if [ -z "$IDENTITY" ]; then
+                        echo "Error: No code signing identity found"
+                        exit 1
+                      fi
+                      
+                      echo "Using identity: $IDENTITY"
+                      
                       # Sign the binary
-                      codesign --force --sign "$CODESIGN_IDENTITY" --timestamp --options runtime target/release/ttsrs
+                      codesign --force --sign "$IDENTITY" --timestamp --options runtime target/release/ttsrs
                       
                       # Verify the signature
                       codesign --verify --verbose=4 target/release/ttsrs
