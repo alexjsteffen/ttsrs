@@ -662,7 +662,19 @@ fn combine_audio_files(output_dir: &Path, format: &str, timestamp: &str, voice: 
 
     let output_file_path = output_dir.join(format!("output.{}", format));
 
-    // Simpler ffmpeg command using the file list
+    // ffmpeg command using the file list with re-encoding to fix timestamp issues
+    // Re-encoding ensures continuous timestamps instead of copying discontinuous ones
+    // Choose appropriate encoder based on output format
+    let encoder = match format {
+        "mp3" => "libmp3lame",
+        "flac" => "flac",
+        "wav" => "pcm_s16le",
+        "pcm" => "pcm_s16le",
+        "opus" => "libopus",
+        "aac" => "aac",
+        _ => "flac", // Default to flac for unknown formats
+    };
+    
     let ffmpeg_args = vec![
         "-f",
         "concat",
@@ -670,8 +682,8 @@ fn combine_audio_files(output_dir: &Path, format: &str, timestamp: &str, voice: 
         "0", // Needed if paths are relative or contain certain characters
         "-i",
         list_file_path.to_str().unwrap(),
-        "-c",
-        "copy", // Try to copy codecs directly if possible (faster, lossless)
+        "-c:a",
+        encoder, // Re-encode with appropriate codec to fix timestamps
         "-y",   // Overwrite output files without asking
         output_file_path.to_str().unwrap(),
     ];
