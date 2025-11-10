@@ -135,7 +135,10 @@ async fn main() -> Result<()> {
         "openai" => TtsProvider::OpenAI,
         "elevenlabs" => TtsProvider::ElevenLabs,
         _ => {
-            anyhow::bail!("Invalid provider '{}'. Must be 'openai' or 'elevenlabs'", args.provider);
+            anyhow::bail!(
+                "Invalid provider '{}'. Must be 'openai' or 'elevenlabs'",
+                args.provider
+            );
         }
     };
 
@@ -165,7 +168,7 @@ async fn main() -> Result<()> {
                 .with_prompt(prompt)
                 .interact_text()
                 .ok()?;
-            
+
             // Save the API key to the config file for future use
             config.set_api_key(&provider, input.clone());
             if let Err(e) = config.save() {
@@ -173,7 +176,7 @@ async fn main() -> Result<()> {
             } else {
                 println!("API key saved to config file (.ttsrs_config.json) for future use.");
             }
-            
+
             Some(input)
         })
         .context(
@@ -236,18 +239,30 @@ async fn main() -> Result<()> {
     // Prompt for output format
     let formats = match provider {
         TtsProvider::OpenAI => vec!["mp3", "flac", "wav", "pcm", "opus", "aac"],
-        TtsProvider::ElevenLabs => vec!["mp3_44100_128", "mp3_44100_192", "pcm_16000", "pcm_22050", "pcm_24000", "pcm_44100"],
+        TtsProvider::ElevenLabs => vec![
+            "mp3_44100_128",
+            "mp3_44100_192",
+            "pcm_16000",
+            "pcm_22050",
+            "pcm_24000",
+            "pcm_44100",
+        ],
     };
-    
+
     // For ElevenLabs, set default format if using the OpenAI default
     if provider == TtsProvider::ElevenLabs && args.format.to_lowercase() == "flac" {
         args.format = "mp3_44100_128".to_string();
     }
-    
-    if (provider == TtsProvider::OpenAI && args.format.to_lowercase() == "flac") ||
-       (provider == TtsProvider::ElevenLabs && args.format == "mp3_44100_128") {
+
+    if (provider == TtsProvider::OpenAI && args.format.to_lowercase() == "flac")
+        || (provider == TtsProvider::ElevenLabs && args.format == "mp3_44100_128")
+    {
         // Only prompt if default is used
-        let default_idx = if provider == TtsProvider::OpenAI { 1 } else { 0 };
+        let default_idx = if provider == TtsProvider::OpenAI {
+            1
+        } else {
+            0
+        };
         let selection = Select::new()
             .with_prompt("Select an output format")
             .items(&formats)
@@ -454,8 +469,8 @@ async fn generate_audio_files(
 
         // Check if the chunk exceeds the character limit (provider-specific limit)
         let max_chars = match provider {
-            TtsProvider::OpenAI => 4096,      // OpenAI's documented limit
-            TtsProvider::ElevenLabs => 5000,  // ElevenLabs has a 5000 character limit
+            TtsProvider::OpenAI => 4096,     // OpenAI's documented limit
+            TtsProvider::ElevenLabs => 5000, // ElevenLabs has a 5000 character limit
         };
         if chunk_string.len() > max_chars {
             eprintln!( // Use eprintln for errors
@@ -489,7 +504,10 @@ async fn generate_audio_files(
                     "speed": speed,
                     "response_format": format,
                 });
-                (body, ("Authorization".to_string(), format!("Bearer {}", api_key)))
+                (
+                    body,
+                    ("Authorization".to_string(), format!("Bearer {}", api_key)),
+                )
             }
             TtsProvider::ElevenLabs => {
                 let body = serde_json::json!({
@@ -563,7 +581,13 @@ async fn generate_audio_files(
         } else {
             format
         };
-        let file_name = format!("tmp_{}_{}_chunk{:06}.{}", date_time_string, voice_lowercase, i + 1, file_ext);
+        let file_name = format!(
+            "tmp_{}_{}_chunk{:06}.{}",
+            date_time_string,
+            voice_lowercase,
+            i + 1,
+            file_ext
+        );
         let file_path = output_dir.join(&file_name);
 
         // Stream the response and write it to the file
@@ -602,7 +626,12 @@ async fn generate_audio_files(
 }
 
 /// Combines all the generated temporary audio files into a single file using ffmpeg.
-fn combine_audio_files(output_dir: &Path, format: &str, timestamp: &str, voice: &str) -> Result<()> {
+fn combine_audio_files(
+    output_dir: &Path,
+    format: &str,
+    timestamp: &str,
+    voice: &str,
+) -> Result<()> {
     //
     // Collect all the temporary files for this specific run (matching timestamp, voice, and format)
     let mut input_files = Vec::new();
@@ -649,14 +678,11 @@ fn combine_audio_files(output_dir: &Path, format: &str, timestamp: &str, voice: 
         let mut list_file = File::create(&list_file_path)?;
         for input_file in &input_files {
             // Use only the filename (not the full path) since ffmpeg_list.txt is in the same directory
-            let filename = input_file.file_name()
+            let filename = input_file
+                .file_name()
                 .and_then(|name| name.to_str())
                 .context("Failed to get filename")?;
-            writeln!(
-                list_file,
-                "file '{}'",
-                filename
-            )?;
+            writeln!(list_file, "file '{}'", filename)?;
         }
     } // list_file goes out of scope and is closed
 
@@ -674,7 +700,7 @@ fn combine_audio_files(output_dir: &Path, format: &str, timestamp: &str, voice: 
         "aac" => "aac",
         _ => "flac", // Default to flac for unknown formats
     };
-    
+
     let ffmpeg_args = vec![
         "-f",
         "concat",
@@ -684,7 +710,7 @@ fn combine_audio_files(output_dir: &Path, format: &str, timestamp: &str, voice: 
         list_file_path.to_str().unwrap(),
         "-c:a",
         encoder, // Re-encode with appropriate codec to fix timestamps
-        "-y",   // Overwrite output files without asking
+        "-y",    // Overwrite output files without asking
         output_file_path.to_str().unwrap(),
     ];
 
@@ -744,4 +770,38 @@ fn remove_tmp(output_dir: &Path, format: &str, timestamp: &str, voice: &str) -> 
         println!("Removed {} temporary {} files.", removed_count, format);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_encoder_selection() {
+        // Test that the correct encoder is selected for each format
+        let test_cases = vec![
+            ("mp3", "libmp3lame"),
+            ("flac", "flac"),
+            ("wav", "pcm_s16le"),
+            ("pcm", "pcm_s16le"),
+            ("opus", "libopus"),
+            ("aac", "aac"),
+            ("unknown", "flac"), // Default case
+        ];
+
+        for (format, expected_encoder) in test_cases {
+            let encoder = match format {
+                "mp3" => "libmp3lame",
+                "flac" => "flac",
+                "wav" => "pcm_s16le",
+                "pcm" => "pcm_s16le",
+                "opus" => "libopus",
+                "aac" => "aac",
+                _ => "flac",
+            };
+            assert_eq!(
+                encoder, expected_encoder,
+                "Format '{}' should use encoder '{}'",
+                format, expected_encoder
+            );
+        }
+    }
 }
