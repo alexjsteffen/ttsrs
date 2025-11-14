@@ -1,0 +1,683 @@
+use anyhow::{Context, Result};
+use crossterm::{
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    widgets::{Block, Borders, Paragraph},
+    Frame, Terminal,
+};
+use std::io;
+
+use crate::Args;
+
+#[derive(Debug, Clone, PartialEq)]
+enum FocusedField {
+    Provider,
+    InputFile,
+    Voice,
+    Model,
+    Format,
+    Speed,
+    ApiKey,
+    // ElevenLabs specific fields
+    ElevenLabsVoiceId,
+    ElevenLabsModel,
+    Stability,
+    Similarity,
+    Submit,
+}
+
+pub struct TuiApp {
+    focused_field: FocusedField,
+    fields: Vec<FocusedField>,
+    input_file: String,
+    provider: usize, // 0 = OpenAI, 1 = ElevenLabs
+    voice: usize,
+    model: String,
+    format: usize,
+    speed: String,
+    api_key: String,
+    elevenlabs_voice_id: String,
+    elevenlabs_model: String,
+    stability: String,
+    similarity: String,
+    editing_field: Option<String>,
+}
+
+impl TuiApp {
+    pub fn new() -> Self {
+        let fields = vec![
+            FocusedField::Provider,
+            FocusedField::InputFile,
+            FocusedField::Voice,
+            FocusedField::Model,
+            FocusedField::Format,
+            FocusedField::Speed,
+            FocusedField::ApiKey,
+            FocusedField::Submit,
+        ];
+
+        TuiApp {
+            focused_field: FocusedField::Provider,
+            fields,
+            input_file: String::new(),
+            provider: 0,
+            voice: 5, // Default to Alloy
+            model: "tts-1-hd".to_string(),
+            format: 1, // Default to flac for OpenAI
+            speed: "1.0".to_string(),
+            api_key: String::new(),
+            elevenlabs_voice_id: String::new(),
+            elevenlabs_model: "eleven_turbo_v2_5".to_string(),
+            stability: "0.5".to_string(),
+            similarity: "0.75".to_string(),
+            editing_field: None,
+        }
+    }
+
+    fn update_fields(&mut self) {
+        // Update available fields based on provider
+        self.fields = if self.provider == 0 {
+            // OpenAI
+            vec![
+                FocusedField::Provider,
+                FocusedField::InputFile,
+                FocusedField::Voice,
+                FocusedField::Model,
+                FocusedField::Format,
+                FocusedField::Speed,
+                FocusedField::ApiKey,
+                FocusedField::Submit,
+            ]
+        } else {
+            // ElevenLabs
+            vec![
+                FocusedField::Provider,
+                FocusedField::InputFile,
+                FocusedField::ElevenLabsVoiceId,
+                FocusedField::ElevenLabsModel,
+                FocusedField::Format,
+                FocusedField::Stability,
+                FocusedField::Similarity,
+                FocusedField::ApiKey,
+                FocusedField::Submit,
+            ]
+        };
+
+        // Make sure focused field is still valid
+        if !self.fields.contains(&self.focused_field) {
+            self.focused_field = self.fields[0].clone();
+        }
+    }
+
+    fn next_field(&mut self) {
+        if let Some(current_idx) = self.fields.iter().position(|f| f == &self.focused_field) {
+            let next_idx = (current_idx + 1) % self.fields.len();
+            self.focused_field = self.fields[next_idx].clone();
+        }
+    }
+
+    fn prev_field(&mut self) {
+        if let Some(current_idx) = self.fields.iter().position(|f| f == &self.focused_field) {
+            let prev_idx = if current_idx == 0 {
+                self.fields.len() - 1
+            } else {
+                current_idx - 1
+            };
+            self.focused_field = self.fields[prev_idx].clone();
+        }
+    }
+
+    fn handle_char_input(&mut self, c: char) {
+        if let Some(ref mut text) = self.editing_field {
+            text.push(c);
+        }
+    }
+
+    fn handle_backspace(&mut self) {
+        if let Some(ref mut text) = self.editing_field {
+            text.pop();
+        }
+    }
+
+    fn start_editing(&mut self) {
+        let text = match self.focused_field {
+            FocusedField::InputFile => &self.input_file,
+            FocusedField::Model => &self.model,
+            FocusedField::Speed => &self.speed,
+            FocusedField::ApiKey => &self.api_key,
+            FocusedField::ElevenLabsVoiceId => &self.elevenlabs_voice_id,
+            FocusedField::ElevenLabsModel => &self.elevenlabs_model,
+            FocusedField::Stability => &self.stability,
+            FocusedField::Similarity => &self.similarity,
+            _ => return,
+        };
+        self.editing_field = Some(text.clone());
+    }
+
+    fn finish_editing(&mut self) {
+        if let Some(text) = self.editing_field.take() {
+            match self.focused_field {
+                FocusedField::InputFile => self.input_file = text,
+                FocusedField::Model => self.model = text,
+                FocusedField::Speed => self.speed = text,
+                FocusedField::ApiKey => self.api_key = text,
+                FocusedField::ElevenLabsVoiceId => self.elevenlabs_voice_id = text,
+                FocusedField::ElevenLabsModel => self.elevenlabs_model = text,
+                FocusedField::Stability => self.stability = text,
+                FocusedField::Similarity => self.similarity = text,
+                _ => {}
+            }
+        }
+    }
+
+    fn handle_left_right(&mut self, is_right: bool) {
+        match self.focused_field {
+            FocusedField::Provider => {
+                self.provider = if is_right {
+                    (self.provider + 1) % 2
+                } else if self.provider == 0 {
+                    1
+                } else {
+                    0
+                };
+                self.update_fields();
+            }
+            FocusedField::Voice if self.provider == 0 => {
+                let voices = get_openai_voices();
+                self.voice = if is_right {
+                    (self.voice + 1) % voices.len()
+                } else if self.voice == 0 {
+                    voices.len() - 1
+                } else {
+                    self.voice - 1
+                };
+            }
+            FocusedField::Format => {
+                let formats = get_formats(self.provider);
+                self.format = if is_right {
+                    (self.format + 1) % formats.len()
+                } else if self.format == 0 {
+                    formats.len() - 1
+                } else {
+                    self.format - 1
+                };
+            }
+            _ => {}
+        }
+    }
+
+    pub fn to_args(&self) -> Result<Args> {
+        let provider = if self.provider == 0 {
+            "openai".to_string()
+        } else {
+            "elevenlabs".to_string()
+        };
+
+        let voice = if self.provider == 0 {
+            get_openai_voices()[self.voice].split(" - ").next().unwrap().to_lowercase()
+        } else {
+            String::new()
+        };
+
+        let format = get_formats(self.provider)[self.format].to_string();
+
+        let speed: f32 = self.speed.parse().context("Invalid speed value")?;
+
+        let elevenlabs_stability: f32 = if self.provider == 1 {
+            self.stability.parse().context("Invalid stability value")?
+        } else {
+            0.5
+        };
+
+        let elevenlabs_similarity: f32 = if self.provider == 1 {
+            self.similarity.parse().context("Invalid similarity value")?
+        } else {
+            0.75
+        };
+
+        Ok(Args {
+            input_file: Some(self.input_file.clone()),
+            model: self.model.clone(),
+            voice,
+            format,
+            speed,
+            apikey: Some(self.api_key.clone()),
+            endpoint_url: None,
+            provider,
+            elevenlabs_voice_id: if self.provider == 1 {
+                Some(self.elevenlabs_voice_id.clone())
+            } else {
+                None
+            },
+            elevenlabs_model: self.elevenlabs_model.clone(),
+            elevenlabs_stability,
+            elevenlabs_similarity,
+            tui: false, // Already in TUI mode
+        })
+    }
+}
+
+fn get_openai_voices() -> Vec<&'static str> {
+    vec![
+        "Echo - Clear and professional, ideal for announcements",
+        "Fable - Warm and engaging, perfect for storytelling",
+        "Onyx - Deep and authoritative",
+        "Nova - Young and energetic",
+        "Shimmer - Soft and soothing",
+        "Alloy - Versatile and well-balanced",
+        "Ash - Clear and conversational",
+        "Coral - Warm and friendly",
+        "Sage - Calm and measured",
+    ]
+}
+
+fn get_formats(provider: usize) -> Vec<&'static str> {
+    if provider == 0 {
+        vec!["mp3", "flac", "wav", "pcm", "opus", "aac"]
+    } else {
+        vec![
+            "mp3_44100_128",
+            "mp3_44100_192",
+            "pcm_16000",
+            "pcm_22050",
+            "pcm_24000",
+            "pcm_44100",
+        ]
+    }
+}
+
+pub fn run_tui() -> Result<Option<Args>> {
+    // Setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // Create app state
+    let mut app = TuiApp::new();
+    let result = run_app(&mut terminal, &mut app);
+
+    // Restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    match result {
+        Ok(should_submit) => {
+            if should_submit {
+                Ok(Some(app.to_args()?))
+            } else {
+                Ok(None)
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn run_app<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    app: &mut TuiApp,
+) -> Result<bool> {
+    loop {
+        terminal.draw(|f| ui(f, app))?;
+
+        if let Event::Key(key) = event::read()? {
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
+
+            // If editing, handle input differently
+            if app.editing_field.is_some() {
+                match key.code {
+                    KeyCode::Enter => {
+                        app.finish_editing();
+                    }
+                    KeyCode::Esc => {
+                        app.editing_field = None;
+                    }
+                    KeyCode::Char(c) => {
+                        app.handle_char_input(c);
+                    }
+                    KeyCode::Backspace => {
+                        app.handle_backspace();
+                    }
+                    _ => {}
+                }
+            } else {
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => {
+                        return Ok(false);
+                    }
+                    KeyCode::Down | KeyCode::Tab => {
+                        app.next_field();
+                    }
+                    KeyCode::Up | KeyCode::BackTab => {
+                        app.prev_field();
+                    }
+                    KeyCode::Left => {
+                        app.handle_left_right(false);
+                    }
+                    KeyCode::Right => {
+                        app.handle_left_right(true);
+                    }
+                    KeyCode::Enter => {
+                        if app.focused_field == FocusedField::Submit {
+                            return Ok(true);
+                        } else {
+                            app.start_editing();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+fn ui(f: &mut Frame, app: &mut TuiApp) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints(
+            [
+                Constraint::Length(3),
+                Constraint::Min(10),
+                Constraint::Length(3),
+            ]
+            .as_ref(),
+        )
+        .split(f.area());
+
+    // Title
+    let title = Paragraph::new("TTSRS - Text-to-Speech TUI")
+        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .block(Block::default().borders(Borders::ALL));
+    f.render_widget(title, chunks[0]);
+
+    // Main form
+    let form_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(
+            [
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Min(1),
+            ]
+            .as_ref(),
+        )
+        .split(chunks[1]);
+
+    let mut chunk_idx = 0;
+
+    // Provider selector
+    if app.fields.contains(&FocusedField::Provider) {
+        let provider_text = if app.provider == 0 { "OpenAI" } else { "ElevenLabs" };
+        let style = if app.focused_field == FocusedField::Provider {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let provider = Paragraph::new(format!("Provider: {} (← →)", provider_text))
+            .style(style)
+            .block(Block::default().borders(Borders::ALL));
+        f.render_widget(provider, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // Input file
+    if app.fields.contains(&FocusedField::InputFile) {
+        let text = if let Some(ref editing) = app.editing_field {
+            if app.focused_field == FocusedField::InputFile {
+                editing.clone()
+            } else {
+                app.input_file.clone()
+            }
+        } else {
+            app.input_file.clone()
+        };
+        let style = if app.focused_field == FocusedField::InputFile {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let input_file = Paragraph::new(text)
+            .style(style)
+            .block(Block::default().borders(Borders::ALL).title("Input File (Enter to edit)"));
+        f.render_widget(input_file, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // Voice selector (OpenAI only)
+    if app.fields.contains(&FocusedField::Voice) {
+        let voices = get_openai_voices();
+        let voice_text = voices[app.voice];
+        let style = if app.focused_field == FocusedField::Voice {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let voice = Paragraph::new(format!("{} (← →)", voice_text))
+            .style(style)
+            .block(Block::default().borders(Borders::ALL).title("Voice"));
+        f.render_widget(voice, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // Model
+    if app.fields.contains(&FocusedField::Model) {
+        let text = if let Some(ref editing) = app.editing_field {
+            if app.focused_field == FocusedField::Model {
+                editing.clone()
+            } else {
+                app.model.clone()
+            }
+        } else {
+            app.model.clone()
+        };
+        let style = if app.focused_field == FocusedField::Model {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let model = Paragraph::new(text)
+            .style(style)
+            .block(Block::default().borders(Borders::ALL).title("Model (Enter to edit)"));
+        f.render_widget(model, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // Format
+    if app.fields.contains(&FocusedField::Format) {
+        let formats = get_formats(app.provider);
+        let format_text = formats[app.format];
+        let style = if app.focused_field == FocusedField::Format {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let format = Paragraph::new(format!("{} (← →)", format_text))
+            .style(style)
+            .block(Block::default().borders(Borders::ALL).title("Format"));
+        f.render_widget(format, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // Speed (OpenAI only)
+    if app.fields.contains(&FocusedField::Speed) {
+        let text = if let Some(ref editing) = app.editing_field {
+            if app.focused_field == FocusedField::Speed {
+                editing.clone()
+            } else {
+                app.speed.clone()
+            }
+        } else {
+            app.speed.clone()
+        };
+        let style = if app.focused_field == FocusedField::Speed {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let speed = Paragraph::new(text)
+            .style(style)
+            .block(Block::default().borders(Borders::ALL).title("Speed (0.25-4.0, Enter to edit)"));
+        f.render_widget(speed, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // ElevenLabs Voice ID
+    if app.fields.contains(&FocusedField::ElevenLabsVoiceId) {
+        let text = if let Some(ref editing) = app.editing_field {
+            if app.focused_field == FocusedField::ElevenLabsVoiceId {
+                editing.clone()
+            } else {
+                app.elevenlabs_voice_id.clone()
+            }
+        } else {
+            app.elevenlabs_voice_id.clone()
+        };
+        let style = if app.focused_field == FocusedField::ElevenLabsVoiceId {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let voice_id = Paragraph::new(text)
+            .style(style)
+            .block(Block::default().borders(Borders::ALL).title("Voice ID (Enter to edit)"));
+        f.render_widget(voice_id, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // ElevenLabs Model
+    if app.fields.contains(&FocusedField::ElevenLabsModel) {
+        let text = if let Some(ref editing) = app.editing_field {
+            if app.focused_field == FocusedField::ElevenLabsModel {
+                editing.clone()
+            } else {
+                app.elevenlabs_model.clone()
+            }
+        } else {
+            app.elevenlabs_model.clone()
+        };
+        let style = if app.focused_field == FocusedField::ElevenLabsModel {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let el_model = Paragraph::new(text)
+            .style(style)
+            .block(Block::default().borders(Borders::ALL).title("ElevenLabs Model (Enter to edit)"));
+        f.render_widget(el_model, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // Stability (ElevenLabs only)
+    if app.fields.contains(&FocusedField::Stability) {
+        let text = if let Some(ref editing) = app.editing_field {
+            if app.focused_field == FocusedField::Stability {
+                editing.clone()
+            } else {
+                app.stability.clone()
+            }
+        } else {
+            app.stability.clone()
+        };
+        let style = if app.focused_field == FocusedField::Stability {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let stability = Paragraph::new(text)
+            .style(style)
+            .block(Block::default().borders(Borders::ALL).title("Stability (0.0-1.0, Enter to edit)"));
+        f.render_widget(stability, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // Similarity (ElevenLabs only)
+    if app.fields.contains(&FocusedField::Similarity) {
+        let text = if let Some(ref editing) = app.editing_field {
+            if app.focused_field == FocusedField::Similarity {
+                editing.clone()
+            } else {
+                app.similarity.clone()
+            }
+        } else {
+            app.similarity.clone()
+        };
+        let style = if app.focused_field == FocusedField::Similarity {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let similarity = Paragraph::new(text)
+            .style(style)
+            .block(Block::default().borders(Borders::ALL).title("Similarity (0.0-1.0, Enter to edit)"));
+        f.render_widget(similarity, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // API Key
+    if app.fields.contains(&FocusedField::ApiKey) {
+        let text = if let Some(ref editing) = app.editing_field {
+            if app.focused_field == FocusedField::ApiKey {
+                "*".repeat(editing.len())
+            } else {
+                "*".repeat(app.api_key.len())
+            }
+        } else {
+            "*".repeat(app.api_key.len())
+        };
+        let style = if app.focused_field == FocusedField::ApiKey {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let api_key = Paragraph::new(text)
+            .style(style)
+            .block(Block::default().borders(Borders::ALL).title("API Key (Enter to edit)"));
+        f.render_widget(api_key, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // Submit button
+    if app.fields.contains(&FocusedField::Submit) {
+        let style = if app.focused_field == FocusedField::Submit {
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Green)
+        };
+        let submit = Paragraph::new("[ Generate Audio ]")
+            .style(style)
+            .block(Block::default().borders(Borders::ALL));
+        f.render_widget(submit, form_chunks[chunk_idx]);
+    }
+
+    // Help text
+    let help_text = if app.editing_field.is_some() {
+        "Editing: Enter to confirm | Esc to cancel"
+    } else {
+        "Navigation: ↑↓/Tab | Select: ←→ | Edit: Enter | Submit: Enter on button | Quit: q/Esc"
+    };
+    let help = Paragraph::new(help_text)
+        .style(Style::default().fg(Color::Gray))
+        .block(Block::default().borders(Borders::ALL));
+    f.render_widget(help, chunks[2]);
+}
