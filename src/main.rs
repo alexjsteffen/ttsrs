@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tiktoken_rs::cl100k_base;
 
+mod tui;
+
 // Define the TTS provider
 #[derive(Debug, Clone, PartialEq)]
 enum TtsProvider {
@@ -122,6 +124,10 @@ struct Args {
     /// ElevenLabs voice similarity boost (0.0 - 1.0, default: 0.75)
     #[arg(long, default_value = "0.75")]
     elevenlabs_similarity: f32,
+
+    /// Launch TUI mode for interactive text-to-speech
+    #[arg(long)]
+    tui: bool,
 }
 
 /// The main function of the program.
@@ -129,6 +135,19 @@ struct Args {
 async fn main() -> Result<()> {
     // Parse command-line arguments
     let mut args = Args::parse();
+
+    // If TUI mode is requested, run the TUI
+    if args.tui {
+        match tui::run_tui()? {
+            Some(tui_args) => {
+                args = tui_args;
+            }
+            None => {
+                println!("TUI cancelled.");
+                return Ok(());
+            }
+        }
+    }
 
     // Determine the TTS provider
     let provider = match args.provider.to_lowercase().as_str() {
