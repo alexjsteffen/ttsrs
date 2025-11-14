@@ -17,6 +17,7 @@ A Rust-based command-line tool for converting text to speech using OpenAI's TTS 
 ## Features
 
 - 🎯 Easy-to-use command-line interface
+- 🖥️ Optional TUI (Terminal User Interface) mode for interactive configuration
 - 🔊 High-quality text-to-speech conversion using OpenAI's API, ElevenLabs API, or custom endpoints
 - 🌐 Support for multiple TTS providers (OpenAI and ElevenLabs)
 - 📝 Supports large text files through automatic chunking
@@ -35,6 +36,27 @@ A Rust-based command-line tool for converting text to speech using OpenAI's TTS 
 
 ## Usage
 
+### TUI Mode (Interactive)
+
+For an interactive terminal user interface, use the `--tui` flag:
+
+```bash
+ttsrs --tui
+```
+
+This launches a full-screen TUI where you can:
+- Select TTS provider (OpenAI or ElevenLabs)
+- Enter input file path
+- Choose voice, model, and format using arrow keys
+- Configure all settings interactively
+- Submit to generate audio
+
+Navigation:
+- **↑↓ / Tab**: Move between fields
+- **← →**: Change selection for dropdown fields
+- **Enter**: Edit text fields or submit
+- **Esc / q**: Quit
+
 ### Command-Line Arguments
 
 ```bash
@@ -44,6 +66,7 @@ ttsrs [OPTIONS] <INPUT_FILE>
 | Argument       | Description                                     | Default                         |
 | -------------- | ----------------------------------------------- | ------------------------------- |
 | `<INPUT_FILE>` | Path to the input text file                     | - (Required, or prompted)       |
+| `--tui`        | Launch TUI mode for interactive configuration   | -                               |
 | `--provider`   | TTS provider (`openai` or `elevenlabs`)         | `openai`                        |
 | `--model`, `-m`  | TTS model to use                                | `tts-1-hd` (OpenAI)             |
 | `--voice`, `-v`  | Voice selection (OpenAI only)                   | `alloy` (prompted if default)   |
@@ -99,6 +122,19 @@ Supported output formats:
 - `ulaw_8000` - 8kHz μ-law encoding (saved as .wav files)
 
 ## Examples
+
+### TUI Mode
+
+Launch the interactive TUI for easy configuration:
+```bash
+ttsrs --tui
+```
+
+The TUI provides a user-friendly interface where you can:
+- Navigate with arrow keys or Tab
+- Edit fields by pressing Enter
+- Select options with left/right arrows
+- Submit your configuration to generate audio
 
 ### OpenAI Examples
 
