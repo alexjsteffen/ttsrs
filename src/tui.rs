@@ -681,3 +681,148 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(help, chunks[2]);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tui_app_new() {
+        let app = TuiApp::new();
+        assert_eq!(app.provider, 0);
+        assert_eq!(app.voice, 5);
+        assert_eq!(app.model, "tts-1-hd");
+        assert_eq!(app.format, 1);
+        assert_eq!(app.speed, "1.0");
+        assert_eq!(app.focused_field, FocusedField::Provider);
+    }
+
+    #[test]
+    fn test_provider_switch() {
+        let mut app = TuiApp::new();
+        assert_eq!(app.provider, 0); // OpenAI
+        assert_eq!(app.fields.len(), 8); // OpenAI fields
+
+        // Switch to ElevenLabs
+        app.provider = 1;
+        app.update_fields();
+        assert_eq!(app.fields.len(), 9); // ElevenLabs has more fields
+        assert!(app.fields.contains(&FocusedField::ElevenLabsVoiceId));
+        assert!(!app.fields.contains(&FocusedField::Voice));
+    }
+
+    #[test]
+    fn test_next_field_navigation() {
+        let mut app = TuiApp::new();
+        let initial_field = app.focused_field.clone();
+        app.next_field();
+        assert_ne!(app.focused_field, initial_field);
+    }
+
+    #[test]
+    fn test_prev_field_navigation() {
+        let mut app = TuiApp::new();
+        app.next_field();
+        app.prev_field();
+        assert_eq!(app.focused_field, FocusedField::Provider);
+    }
+
+    #[test]
+    fn test_char_input() {
+        let mut app = TuiApp::new();
+        app.focused_field = FocusedField::InputFile;
+        app.start_editing();
+        app.handle_char_input('t');
+        app.handle_char_input('e');
+        app.handle_char_input('s');
+        app.handle_char_input('t');
+        app.finish_editing();
+        assert_eq!(app.input_file, "test");
+    }
+
+    #[test]
+    fn test_backspace() {
+        let mut app = TuiApp::new();
+        app.focused_field = FocusedField::InputFile;
+        app.start_editing();
+        app.handle_char_input('a');
+        app.handle_char_input('b');
+        app.handle_backspace();
+        app.finish_editing();
+        assert_eq!(app.input_file, "a");
+    }
+
+    #[test]
+    fn test_to_args_openai() {
+        let mut app = TuiApp::new();
+        app.input_file = "test.txt".to_string();
+        app.api_key = "test_key".to_string();
+        
+        let args = app.to_args().unwrap();
+        assert_eq!(args.input_file, Some("test.txt".to_string()));
+        assert_eq!(args.provider, "openai");
+        assert_eq!(args.voice, "alloy");
+        assert_eq!(args.apikey, Some("test_key".to_string()));
+    }
+
+    #[test]
+    fn test_to_args_elevenlabs() {
+        let mut app = TuiApp::new();
+        app.provider = 1;
+        app.input_file = "test.txt".to_string();
+        app.api_key = "test_key".to_string();
+        app.elevenlabs_voice_id = "voice123".to_string();
+        
+        let args = app.to_args().unwrap();
+        assert_eq!(args.provider, "elevenlabs");
+        assert_eq!(args.elevenlabs_voice_id, Some("voice123".to_string()));
+    }
+
+    #[test]
+    fn test_get_openai_voices() {
+        let voices = get_openai_voices();
+        assert_eq!(voices.len(), 9);
+        assert!(voices[5].contains("Alloy"));
+    }
+
+    #[test]
+    fn test_get_formats() {
+        let openai_formats = get_formats(0);
+        assert_eq!(openai_formats.len(), 6);
+        assert!(openai_formats.contains(&"flac"));
+
+        let elevenlabs_formats = get_formats(1);
+        assert_eq!(elevenlabs_formats.len(), 6);
+        assert!(elevenlabs_formats.contains(&"mp3_44100_128"));
+    }
+
+    #[test]
+    fn test_handle_left_right_provider() {
+        let mut app = TuiApp::new();
+        app.focused_field = FocusedField::Provider;
+        assert_eq!(app.provider, 0);
+        
+        app.handle_left_right(true); // Right
+        assert_eq!(app.provider, 1);
+        
+        app.handle_left_right(true); // Right again (should wrap)
+        assert_eq!(app.provider, 0);
+        
+        app.handle_left_right(false); // Left
+        assert_eq!(app.provider, 1);
+    }
+
+    #[test]
+    fn test_handle_left_right_voice() {
+        let mut app = TuiApp::new();
+        app.focused_field = FocusedField::Voice;
+        let initial_voice = app.voice;
+        
+        app.handle_left_right(true); // Right
+        assert_ne!(app.voice, initial_voice);
+        
+        app.handle_left_right(false); // Left
+        assert_eq!(app.voice, initial_voice);
+    }
+}
+
