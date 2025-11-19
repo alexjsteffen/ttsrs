@@ -83,13 +83,92 @@ jobs:
                       
                       echo "Using identity: $IDENTITY"
                       
-                      # Sign the binary
+                      # Sign the binary with hardened runtime for notarization
                       codesign --force --sign "$IDENTITY" --timestamp --options runtime target/release/ttsrs
                       
                       # Verify the signature
                       codesign --verify --verbose=4 target/release/ttsrs
                       
                       echo "Code signing completed successfully"
+
+               - name: Create ZIP for Notarization (macOS)
+                 if: runner.os == 'macOS'
+                 run: |
+                      # Create a ZIP archive for notarization
+                      cd target/release
+                      zip -r ttsrs.zip ttsrs
+                      echo "Created ZIP archive for notarization"
+                      ls -lh ttsrs.zip
+
+               - name: Notarize Binary (macOS)
+                 if: runner.os == 'macOS'
+                 env:
+                      APPLE_ID: ${{ secrets.APPLE_ID }}
+                      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+                      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+                      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+                      APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+                      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+                 run: |
+                      set -e
+                      set -o pipefail
+                      
+                      # Determine authentication method
+                      if [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER_ID" ] && [ -n "$APPLE_API_KEY" ]; then
+                        echo "Using App Store Connect API Key for notarization"
+                        
+                        # Create API key file
+                        API_KEY_PATH=$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8
+                        echo "$APPLE_API_KEY" | base64 --decode > $API_KEY_PATH
+                        
+                        # Submit for notarization using API key
+                        xcrun notarytool submit target/release/ttsrs.zip \
+                          --key $API_KEY_PATH \
+                          --key-id $APPLE_API_KEY_ID \
+                          --issuer $APPLE_API_ISSUER_ID \
+                          --wait \
+                          --timeout 30m
+                        
+                        # Clean up API key
+                        rm -f $API_KEY_PATH
+                      elif [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ]; then
+                        echo "Using Apple ID and app-specific password for notarization"
+                        
+                        # Submit for notarization using Apple ID
+                        xcrun notarytool submit target/release/ttsrs.zip \
+                          --apple-id $APPLE_ID \
+                          --team-id $APPLE_TEAM_ID \
+                          --password $APPLE_APP_SPECIFIC_PASSWORD \
+                          --wait \
+                          --timeout 30m
+                      else
+                        echo "Warning: Notarization credentials not configured. Skipping notarization."
+                        echo "To enable notarization, configure either:"
+                        echo "  1. APPLE_API_KEY_ID, APPLE_API_ISSUER_ID, and APPLE_API_KEY (recommended)"
+                        echo "  2. APPLE_ID, APPLE_TEAM_ID, and APPLE_APP_SPECIFIC_PASSWORD"
+                        exit 0
+                      fi
+                      
+                      echo "Notarization completed successfully"
+
+               - name: Staple Notarization Ticket (macOS)
+                 if: runner.os == 'macOS'
+                 env:
+                      APPLE_ID: ${{ secrets.APPLE_ID }}
+                      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+                 run: |
+                      # Only staple if notarization was performed
+                      if [ -n "$APPLE_API_KEY_ID" ] || [ -n "$APPLE_ID" ]; then
+                        echo "Stapling notarization ticket to binary"
+                        xcrun stapler staple target/release/ttsrs
+                        
+                        # Verify the stapled ticket
+                        xcrun stapler validate target/release/ttsrs
+                        
+                        echo "Stapling completed successfully"
+                      else
+                        echo "Skipping stapling (notarization was not performed)"
+                      fi
 
                - name: Upload artifact
                  uses: actions/upload-artifact@v4
