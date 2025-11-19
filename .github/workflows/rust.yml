@@ -151,24 +151,10 @@ jobs:
                       
                       echo "Notarization completed successfully"
 
-               - name: Staple Notarization Ticket (macOS)
-                 if: runner.os == 'macOS'
-                 env:
-                      APPLE_ID: ${{ secrets.APPLE_ID }}
-                      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-                 run: |
-                      # Only staple if notarization was performed
-                      if [ -n "$APPLE_API_KEY_ID" ] || [ -n "$APPLE_ID" ]; then
-                        echo "Stapling notarization ticket to binary"
-                        xcrun stapler staple target/release/ttsrs
-                        
-                        # Verify the stapled ticket
-                        xcrun stapler validate target/release/ttsrs
-                        
-                        echo "Stapling completed successfully"
-                      else
-                        echo "Skipping stapling (notarization was not performed)"
-                      fi
+               # Note: Stapling is not performed for command-line binaries
+               # Stapling only works for .app bundles, .dmg, or .pkg files
+               # For raw binaries, notarization is verified online by Gatekeeper
+               # when the binary is first executed by a user
 
                - name: Upload artifact
                  uses: actions/upload-artifact@v4
