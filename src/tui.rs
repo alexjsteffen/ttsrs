@@ -220,7 +220,11 @@ impl TuiApp {
         };
 
         let voice = if self.provider == 0 {
-            get_openai_voices()[self.voice].split(" - ").next().unwrap().to_lowercase()
+            get_openai_voices()[self.voice]
+                .split(" - ")
+                .next()
+                .unwrap()
+                .to_lowercase()
         } else {
             String::new()
         };
@@ -236,7 +240,9 @@ impl TuiApp {
         };
 
         let elevenlabs_similarity: f32 = if self.provider == 1 {
-            self.similarity.parse().context("Invalid similarity value")?
+            self.similarity
+                .parse()
+                .context("Invalid similarity value")?
         } else {
             0.75
         };
@@ -393,7 +399,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
             [
                 Constraint::Length(3),
                 Constraint::Min(10),
-                Constraint::Length(3),
+                Constraint::Length(5),
             ]
             .as_ref(),
         )
@@ -401,7 +407,11 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // Title
     let title = Paragraph::new("TTSRS - Text-to-Speech TUI")
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(title, chunks[0]);
 
@@ -428,15 +438,25 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // Provider selector
     if app.fields.contains(&FocusedField::Provider) {
-        let provider_text = if app.provider == 0 { "OpenAI" } else { "ElevenLabs" };
-        let style = if app.focused_field == FocusedField::Provider {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        let provider_text = if app.provider == 0 {
+            "OpenAI"
         } else {
-            Style::default()
+            "ElevenLabs"
         };
-        let provider = Paragraph::new(format!("Provider: {} (← →)", provider_text))
+        let style = if app.focused_field == FocusedField::Provider {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Cyan)
+        };
+        let provider = Paragraph::new(format!("{}  [Options: OpenAI, ElevenLabs]", provider_text))
             .style(style)
-            .block(Block::default().borders(Borders::ALL));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("TTS Provider (Use ← → to switch)"),
+            );
         f.render_widget(provider, form_chunks[chunk_idx]);
         chunk_idx += 1;
     }
@@ -452,14 +472,23 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         } else {
             app.input_file.clone()
         };
-        let style = if app.focused_field == FocusedField::InputFile {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        let display_text = if text.is_empty() {
+            "[Enter path to text file]".to_string()
         } else {
-            Style::default()
+            text
         };
-        let input_file = Paragraph::new(text)
-            .style(style)
-            .block(Block::default().borders(Borders::ALL).title("Input File (Enter to edit)"));
+        let style = if app.focused_field == FocusedField::InputFile {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let input_file = Paragraph::new(display_text).style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Input Text File (Press Enter to type path)"),
+        );
         f.render_widget(input_file, form_chunks[chunk_idx]);
         chunk_idx += 1;
     }
@@ -468,14 +497,26 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
     if app.fields.contains(&FocusedField::Voice) {
         let voices = get_openai_voices();
         let voice_text = voices[app.voice];
+        let voice_count = voices.len();
         let style = if app.focused_field == FocusedField::Voice {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        } else {
             Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Magenta)
         };
-        let voice = Paragraph::new(format!("{} (← →)", voice_text))
-            .style(style)
-            .block(Block::default().borders(Borders::ALL).title("Voice"));
+        let voice = Paragraph::new(format!(
+            "{}  [{}/{} voices - Use ← → to browse]",
+            voice_text,
+            app.voice + 1,
+            voice_count
+        ))
+        .style(style)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Voice Selection"),
+        );
         f.render_widget(voice, form_chunks[chunk_idx]);
         chunk_idx += 1;
     }
@@ -492,13 +533,17 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
             app.model.clone()
         };
         let style = if app.focused_field == FocusedField::Model {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        } else {
             Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
         };
-        let model = Paragraph::new(text)
-            .style(style)
-            .block(Block::default().borders(Borders::ALL).title("Model (Enter to edit)"));
+        let model = Paragraph::new(text).style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("TTS Model (Press Enter to edit, e.g., tts-1, tts-1-hd)"),
+        );
         f.render_widget(model, form_chunks[chunk_idx]);
         chunk_idx += 1;
     }
@@ -507,14 +552,32 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
     if app.fields.contains(&FocusedField::Format) {
         let formats = get_formats(app.provider);
         let format_text = formats[app.format];
+        let format_count = formats.len();
         let style = if app.focused_field == FocusedField::Format {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        } else {
             Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Blue)
         };
-        let format = Paragraph::new(format!("{} (← →)", format_text))
-            .style(style)
-            .block(Block::default().borders(Borders::ALL).title("Format"));
+        let format_opts = if app.provider == 0 {
+            "mp3, flac, wav, pcm, opus, aac"
+        } else {
+            "mp3_44100_128/192, pcm_16000/22050/24000/44100"
+        };
+        let format = Paragraph::new(format!(
+            "{}  [{}/{}] Options: {}",
+            format_text,
+            app.format + 1,
+            format_count,
+            format_opts
+        ))
+        .style(style)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Audio Output Format (Use ← → to select)"),
+        );
         f.render_widget(format, form_chunks[chunk_idx]);
         chunk_idx += 1;
     }
@@ -531,13 +594,17 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
             app.speed.clone()
         };
         let style = if app.focused_field == FocusedField::Speed {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        } else {
             Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
         };
-        let speed = Paragraph::new(text)
-            .style(style)
-            .block(Block::default().borders(Borders::ALL).title("Speed (0.25-4.0, Enter to edit)"));
+        let speed = Paragraph::new(text).style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Speaking Speed (Enter number 0.25-4.0, default 1.0)"),
+        );
         f.render_widget(speed, form_chunks[chunk_idx]);
         chunk_idx += 1;
     }
@@ -553,14 +620,23 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         } else {
             app.elevenlabs_voice_id.clone()
         };
-        let style = if app.focused_field == FocusedField::ElevenLabsVoiceId {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        let display_text = if text.is_empty() {
+            "[Enter ElevenLabs voice ID from voice library]".to_string()
         } else {
-            Style::default()
+            text
         };
-        let voice_id = Paragraph::new(text)
-            .style(style)
-            .block(Block::default().borders(Borders::ALL).title("Voice ID (Enter to edit)"));
+        let style = if app.focused_field == FocusedField::ElevenLabsVoiceId {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let voice_id = Paragraph::new(display_text).style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("ElevenLabs Voice ID (Press Enter, e.g., 21m00Tcm4TlvDq8ikWAM)"),
+        );
         f.render_widget(voice_id, form_chunks[chunk_idx]);
         chunk_idx += 1;
     }
@@ -577,13 +653,17 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
             app.elevenlabs_model.clone()
         };
         let style = if app.focused_field == FocusedField::ElevenLabsModel {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        } else {
             Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
         };
-        let el_model = Paragraph::new(text)
-            .style(style)
-            .block(Block::default().borders(Borders::ALL).title("ElevenLabs Model (Enter to edit)"));
+        let el_model = Paragraph::new(text).style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("ElevenLabs Model ID (Press Enter to edit, default: eleven_turbo_v2_5)"),
+        );
         f.render_widget(el_model, form_chunks[chunk_idx]);
         chunk_idx += 1;
     }
@@ -600,13 +680,17 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
             app.stability.clone()
         };
         let style = if app.focused_field == FocusedField::Stability {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        } else {
             Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
         };
-        let stability = Paragraph::new(text)
-            .style(style)
-            .block(Block::default().borders(Borders::ALL).title("Stability (0.0-1.0, Enter to edit)"));
+        let stability = Paragraph::new(text).style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Voice Stability (Enter 0.0-1.0, controls consistency, default 0.5)"),
+        );
         f.render_widget(stability, form_chunks[chunk_idx]);
         chunk_idx += 1;
     }
@@ -623,13 +707,17 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
             app.similarity.clone()
         };
         let style = if app.focused_field == FocusedField::Similarity {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-        } else {
             Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
         };
-        let similarity = Paragraph::new(text)
-            .style(style)
-            .block(Block::default().borders(Borders::ALL).title("Similarity (0.0-1.0, Enter to edit)"));
+        let similarity = Paragraph::new(text).style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Similarity Boost (Enter 0.0-1.0, voice likeness, default 0.75)"),
+        );
         f.render_widget(similarity, form_chunks[chunk_idx]);
         chunk_idx += 1;
     }
@@ -645,14 +733,23 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         } else {
             "*".repeat(app.api_key.len())
         };
-        let style = if app.focused_field == FocusedField::ApiKey {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        let display_text = if text.is_empty() {
+            "[Press Enter to enter your API key securely]".to_string()
         } else {
-            Style::default()
+            text
         };
-        let api_key = Paragraph::new(text)
-            .style(style)
-            .block(Block::default().borders(Borders::ALL).title("API Key (Enter to edit)"));
+        let style = if app.focused_field == FocusedField::ApiKey {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Red)
+        };
+        let api_key = Paragraph::new(display_text).style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("API Key (Required - will be saved to config file)"),
+        );
         f.render_widget(api_key, form_chunks[chunk_idx]);
         chunk_idx += 1;
     }
@@ -660,7 +757,9 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
     // Submit button
     if app.fields.contains(&FocusedField::Submit) {
         let style = if app.focused_field == FocusedField::Submit {
-            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Green)
         };
@@ -670,15 +769,19 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         f.render_widget(submit, form_chunks[chunk_idx]);
     }
 
-    // Help text
+    // Help text - expanded to two lines for more context
     let help_text = if app.editing_field.is_some() {
-        "Editing: Enter to confirm | Esc to cancel"
+        "Editing Mode: Type your input | Enter to confirm | Esc to cancel\nYellow highlight = current field being edited"
     } else {
-        "Navigation: ↑↓/Tab | Select: ←→ | Edit: Enter | Submit: Enter on button | Quit: q/Esc"
+        "Navigation: ↑↓ or Tab to move | ← → to cycle options | Enter to edit/submit | q or Esc to quit\nYellow = focused field | Colors: Cyan=provider, Magenta=voice, Blue=format, Red=API key, Green=submit"
     };
     let help = Paragraph::new(help_text)
         .style(Style::default().fg(Color::Gray))
-        .block(Block::default().borders(Borders::ALL));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Help & Navigation"),
+        );
     f.render_widget(help, chunks[2]);
 }
 
@@ -757,7 +860,7 @@ mod tests {
         let mut app = TuiApp::new();
         app.input_file = "test.txt".to_string();
         app.api_key = "test_key".to_string();
-        
+
         let args = app.to_args().unwrap();
         assert_eq!(args.input_file, Some("test.txt".to_string()));
         assert_eq!(args.provider, "openai");
@@ -772,7 +875,7 @@ mod tests {
         app.input_file = "test.txt".to_string();
         app.api_key = "test_key".to_string();
         app.elevenlabs_voice_id = "voice123".to_string();
-        
+
         let args = app.to_args().unwrap();
         assert_eq!(args.provider, "elevenlabs");
         assert_eq!(args.elevenlabs_voice_id, Some("voice123".to_string()));
@@ -801,13 +904,13 @@ mod tests {
         let mut app = TuiApp::new();
         app.focused_field = FocusedField::Provider;
         assert_eq!(app.provider, 0);
-        
+
         app.handle_left_right(true); // Right
         assert_eq!(app.provider, 1);
-        
+
         app.handle_left_right(true); // Right again (should wrap)
         assert_eq!(app.provider, 0);
-        
+
         app.handle_left_right(false); // Left
         assert_eq!(app.provider, 1);
     }
@@ -817,12 +920,11 @@ mod tests {
         let mut app = TuiApp::new();
         app.focused_field = FocusedField::Voice;
         let initial_voice = app.voice;
-        
+
         app.handle_left_right(true); // Right
         assert_ne!(app.voice, initial_voice);
-        
+
         app.handle_left_right(false); // Left
         assert_eq!(app.voice, initial_voice);
     }
 }
-
