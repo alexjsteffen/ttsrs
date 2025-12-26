@@ -443,6 +443,10 @@ fn chunk_text(lines: &[String]) -> Vec<Vec<String>> {
     chunks
 }
 
+fn preview_prefix(input: &str, max_chars: usize) -> String {
+    input.chars().take(max_chars).collect()
+}
+
 // Generates audio files for each chunk of text using the specified API endpoint
 // Returns (timestamp, voice_lowercase) for identifying the generated files
 // Note: clippy::too_many_arguments is allowed here because these parameters represent
@@ -483,7 +487,7 @@ async fn generate_audio_files(
         );
         println!(
             "Input String: {}...",
-            &chunk_string[..chunk_string.len().min(60)]
+            preview_prefix(&chunk_string, 60)
         );
 
         // Check if the chunk exceeds the character limit (provider-specific limit)
@@ -793,6 +797,8 @@ fn remove_tmp(output_dir: &Path, format: &str, timestamp: &str, voice: &str) -> 
 
 #[cfg(test)]
 mod tests {
+    use super::preview_prefix;
+
     #[test]
     fn test_encoder_selection() {
         // Test that the correct encoder is selected for each format
@@ -822,5 +828,12 @@ mod tests {
                 format, expected_encoder
             );
         }
+    }
+
+    #[test]
+    fn test_preview_prefix_handles_multibyte_characters() {
+        let text = "Lord Durham’s report – Québec et Montréal 😊";
+        let preview = preview_prefix(text, 10);
+        assert_eq!(preview, "Lord Durha");
     }
 }
