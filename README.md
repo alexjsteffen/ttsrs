@@ -47,6 +47,7 @@ ttsrs --tui
 This launches a full-screen TUI where you can:
 - Select TTS provider (OpenAI or ElevenLabs)
 - Enter input file path
+- **Create text files** using the built-in Vim-inspired text editor
 - Choose voice, model, and format using arrow keys
 - Configure all settings interactively
 - Submit to generate audio
@@ -56,6 +57,20 @@ Navigation:
 - **← →**: Change selection for dropdown fields
 - **Enter**: Edit text fields or submit
 - **Esc / q**: Quit
+
+#### Built-in Text Editor
+
+The TUI includes an internal text editor (powered by EdTUI) for creating text files directly within the application:
+
+1. Navigate to "Create Text File" and press Enter
+2. A help modal will appear on first use explaining the Vim-like keybindings
+3. Use Vim keybindings to edit text:
+   - Press `i` to enter Insert mode
+   - Type your text
+   - Press `Esc` to return to Normal mode
+   - Press `F2` to save and exit, or `Esc` (in Normal mode) to cancel
+4. After editing, enter a filename (without .txt extension) to save the file
+5. The file will be saved in the current directory and automatically set as the input file
 
 ### Command-Line Arguments
 

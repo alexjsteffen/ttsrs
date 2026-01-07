@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tiktoken_rs::cl100k_base;
 
+mod editor;
 mod tui;
 
 // Define the TTS provider

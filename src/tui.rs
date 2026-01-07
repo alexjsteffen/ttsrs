@@ -13,12 +13,14 @@ use ratatui::{
 };
 use std::io;
 
+use crate::editor::{run_editor, save_file_with_prompt, EditorResult};
 use crate::Args;
 
 #[derive(Debug, Clone, PartialEq)]
 enum FocusedField {
     Provider,
     InputFile,
+    CreateTextFile, // New option to open the internal text editor
     Voice,
     Model,
     Format,
@@ -47,6 +49,7 @@ pub struct TuiApp {
     stability: String,
     similarity: String,
     editing_field: Option<String>,
+    editor_help_shown: bool, // Track if editor help has been shown this session
 }
 
 impl TuiApp {
@@ -54,6 +57,7 @@ impl TuiApp {
         let fields = vec![
             FocusedField::Provider,
             FocusedField::InputFile,
+            FocusedField::CreateTextFile,
             FocusedField::Voice,
             FocusedField::Model,
             FocusedField::Format,
@@ -77,6 +81,7 @@ impl TuiApp {
             stability: "0.5".to_string(),
             similarity: "0.75".to_string(),
             editing_field: None,
+            editor_help_shown: false,
         }
     }
 
@@ -87,6 +92,7 @@ impl TuiApp {
             vec![
                 FocusedField::Provider,
                 FocusedField::InputFile,
+                FocusedField::CreateTextFile,
                 FocusedField::Voice,
                 FocusedField::Model,
                 FocusedField::Format,
@@ -99,6 +105,7 @@ impl TuiApp {
             vec![
                 FocusedField::Provider,
                 FocusedField::InputFile,
+                FocusedField::CreateTextFile,
                 FocusedField::ElevenLabsVoiceId,
                 FocusedField::ElevenLabsModel,
                 FocusedField::Format,
@@ -298,43 +305,80 @@ fn get_formats(provider: usize) -> Vec<&'static str> {
     }
 }
 
+/// Result of the TUI app loop
+enum TuiAppResult {
+    /// User wants to submit the form
+    Submit,
+    /// User cancelled
+    Cancelled,
+    /// User wants to open the text editor
+    OpenEditor,
+}
+
 pub fn run_tui() -> Result<Option<Args>> {
-    // Setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    // Create app state
+    // Create app state (needs to persist across editor invocations)
     let mut app = TuiApp::new();
-    let result = run_app(&mut terminal, &mut app);
 
-    // Restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+    loop {
+        // Setup terminal
+        enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
 
-    match result {
-        Ok(should_submit) => {
-            if should_submit {
-                Ok(Some(app.to_args()?))
-            } else {
-                Ok(None)
+        let result = run_app(&mut terminal, &mut app);
+
+        // Restore terminal
+        disable_raw_mode()?;
+        execute!(
+            terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
+        terminal.show_cursor()?;
+
+        match result {
+            Ok(TuiAppResult::Submit) => {
+                return Ok(Some(app.to_args()?));
             }
+            Ok(TuiAppResult::Cancelled) => {
+                return Ok(None);
+            }
+            Ok(TuiAppResult::OpenEditor) => {
+                // Run the editor
+                let show_help = !app.editor_help_shown;
+                app.editor_help_shown = true;
+
+                match run_editor(show_help)? {
+                    EditorResult::Saved(content) => {
+                        // Prompt for filename and save
+                        if let Some(path) = save_file_with_prompt(&content)? {
+                            // Set the input file to the saved file
+                            app.input_file = path.to_string_lossy().to_string();
+                            println!("\nPress Enter to continue...");
+                            let mut input = String::new();
+                            std::io::stdin().read_line(&mut input)?;
+                        }
+                    }
+                    EditorResult::Cancelled => {
+                        // Just continue back to the TUI
+                    }
+                }
+                // Continue the loop to go back to the TUI
+            }
+            Err(e) => return Err(e),
         }
-        Err(e) => Err(e),
     }
 }
 
 fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     app: &mut TuiApp,
-) -> Result<bool> {
+) -> Result<TuiAppResult>
+where
+    B::Error: Send + Sync + 'static,
+{
     loop {
         terminal.draw(|f| ui(f, app))?;
 
@@ -363,7 +407,7 @@ fn run_app<B: ratatui::backend::Backend>(
             } else {
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => {
-                        return Ok(false);
+                        return Ok(TuiAppResult::Cancelled);
                     }
                     KeyCode::Down | KeyCode::Tab => {
                         app.next_field();
@@ -379,7 +423,9 @@ fn run_app<B: ratatui::backend::Backend>(
                     }
                     KeyCode::Enter => {
                         if app.focused_field == FocusedField::Submit {
-                            return Ok(true);
+                            return Ok(TuiAppResult::Submit);
+                        } else if app.focused_field == FocusedField::CreateTextFile {
+                            return Ok(TuiAppResult::OpenEditor);
                         } else {
                             app.start_editing();
                         }
@@ -420,6 +466,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         .direction(Direction::Vertical)
         .constraints(
             [
+                Constraint::Length(3),
                 Constraint::Length(3),
                 Constraint::Length(3),
                 Constraint::Length(3),
@@ -490,6 +537,24 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
                 .title("Input Text File (Press Enter to type path)"),
         );
         f.render_widget(input_file, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // Create Text File option (opens internal text editor)
+    if app.fields.contains(&FocusedField::CreateTextFile) {
+        let style = if app.focused_field == FocusedField::CreateTextFile {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::LightGreen)
+        };
+        let create_file = Paragraph::new("[ Open Text Editor ]").style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Create Text File (Press Enter to open editor)"),
+        );
+        f.render_widget(create_file, form_chunks[chunk_idx]);
         chunk_idx += 1;
     }
 
@@ -773,7 +838,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
     let help_text = if app.editing_field.is_some() {
         "Editing Mode: Type your input | Enter to confirm | Esc to cancel\nYellow highlight = current field being edited"
     } else {
-        "Navigation: ↑↓ or Tab to move | ← → to cycle options | Enter to edit/submit | q or Esc to quit\nYellow = focused field | Colors: Cyan=provider, Magenta=voice, Blue=format, Red=API key, Green=submit"
+        "Navigation: ↑↓ or Tab to move | ← → to cycle options | Enter to edit/submit | q or Esc to quit\nLightGreen=Create Text File (opens editor) | Colors: Cyan=provider, Magenta=voice, Blue=format, Red=API key"
     };
     let help = Paragraph::new(help_text)
         .style(Style::default().fg(Color::Gray))
@@ -804,12 +869,12 @@ mod tests {
     fn test_provider_switch() {
         let mut app = TuiApp::new();
         assert_eq!(app.provider, 0); // OpenAI
-        assert_eq!(app.fields.len(), 8); // OpenAI fields
+        assert_eq!(app.fields.len(), 9); // OpenAI fields (includes CreateTextFile)
 
         // Switch to ElevenLabs
         app.provider = 1;
         app.update_fields();
-        assert_eq!(app.fields.len(), 9); // ElevenLabs has more fields
+        assert_eq!(app.fields.len(), 10); // ElevenLabs has more fields (includes CreateTextFile)
         assert!(app.fields.contains(&FocusedField::ElevenLabsVoiceId));
         assert!(!app.fields.contains(&FocusedField::Voice));
     }
@@ -926,5 +991,20 @@ mod tests {
 
         app.handle_left_right(false); // Left
         assert_eq!(app.voice, initial_voice);
+    }
+
+    #[test]
+    fn test_create_text_file_field_exists() {
+        let app = TuiApp::new();
+        assert!(app.fields.contains(&FocusedField::CreateTextFile));
+        assert!(!app.editor_help_shown);
+    }
+
+    #[test]
+    fn test_editor_help_shown_flag() {
+        let mut app = TuiApp::new();
+        assert!(!app.editor_help_shown);
+        app.editor_help_shown = true;
+        assert!(app.editor_help_shown);
     }
 }
