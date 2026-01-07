@@ -4,7 +4,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use edtui::{EditorEventHandler, EditorState, EditorTheme, EditorView, Lines};
+use edtui::{EditorEventHandler, EditorMode, EditorState, EditorTheme, EditorView, Lines};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -106,10 +106,15 @@ where
             // Handle special keys for quitting/saving
             match key.code {
                 KeyCode::Esc => {
-                    // Quit without saving
-                    app.should_quit = true;
-                    app.should_save = false;
-                    return Ok(());
+                    // Only quit if in Normal mode (allows Esc to exit Insert/Visual mode)
+                    if app.editor_state.mode == EditorMode::Normal {
+                        app.should_quit = true;
+                        app.should_save = false;
+                        return Ok(());
+                    } else {
+                        // Pass Esc to edtui to return to Normal mode
+                        app.event_handler.on_key_event(key, &mut app.editor_state);
+                    }
                 }
                 KeyCode::F(2) => {
                     // Save and exit
@@ -159,8 +164,12 @@ fn editor_ui(f: &mut Frame, app: &mut EditorApp) {
         .wrap(true)
         .render(chunks[1], f.buffer_mut());
 
-    // Help bar
-    let help_text = "Vim keybindings: i=insert, Esc=normal mode | F2=Save and Exit | Esc (in normal mode)=Cancel";
+    // Help bar with current mode displayed
+    let mode_name = app.editor_state.mode.name();
+    let help_text = format!(
+        "Mode: {} | Vim keybindings: i=insert, Esc=normal | F2=Save and Exit | Esc (in normal mode)=Cancel",
+        mode_name
+    );
     let help = Paragraph::new(help_text)
         .style(Style::default().fg(Color::Gray))
         .block(Block::default().borders(Borders::ALL).title("Help"));
