@@ -585,7 +585,9 @@ async fn generate_audio_files(
             )),
             Err(e) => {
                 pb.finish_with_message(format!("❌ Error saving audio for chunk {}: {}", i + 1, e));
-                let _ = fs::remove_file(&file_path);
+                if let Err(rm_err) = fs::remove_file(&file_path) {
+                    eprintln!("Warning: Failed to clean up partial file {}: {}", file_path.display(), rm_err);
+                }
             }
         }
     }
