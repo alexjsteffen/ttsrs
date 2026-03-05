@@ -20,7 +20,7 @@ use crate::Args;
 enum FocusedField {
     Provider,
     InputFile,
-    CreateTextFile, // New option to open the internal text editor
+    CreateTextFile,
     Voice,
     Model,
     Format,
@@ -50,6 +50,12 @@ pub struct TuiApp {
     similarity: String,
     editing_field: Option<String>,
     editor_help_shown: bool, // Track if editor help has been shown this session
+}
+
+impl Default for TuiApp {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TuiApp {

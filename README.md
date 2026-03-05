@@ -3,16 +3,30 @@
 A Rust-based command-line tool for converting text to speech using OpenAI's TTS API, ElevenLabs API, or a compatible custom endpoint.
 
 ## Table of Contents
+
 - [Features](#features)
-- [Installation](#installation)
 - [Prerequisites](#prerequisites)
+- [Installation](#installation)
+  - [From Source](#from-source)
+  - [Pre-built Binaries](#pre-built-binaries)
+- [Quick Start](#quick-start)
 - [Usage](#usage)
+  - [TUI Mode (Interactive)](#tui-mode-interactive)
   - [Command-Line Arguments](#command-line-arguments)
   - [Voice Options](#voice-options)
   - [Audio Formats](#audio-formats)
 - [Examples](#examples)
-- [Environment Variables](#environment-variables)
+- [Configuration](#configuration)
+  - [Environment Variables](#environment-variables)
+  - [Configuration File](#configuration-file)
 - [Technical Details](#technical-details)
+- [Development](#development)
+  - [Building](#building)
+  - [Testing](#testing)
+  - [Code Signing (macOS)](#code-signing-macos)
+- [Contributing](#contributing)
+- [License](#license)
+- [Acknowledgments](#acknowledgments)
 
 ## Features
 
@@ -21,18 +35,64 @@ A Rust-based command-line tool for converting text to speech using OpenAI's TTS 
 - 🔊 High-quality text-to-speech conversion using OpenAI's API, ElevenLabs API, or custom endpoints
 - 🌐 Support for multiple TTS providers (OpenAI and ElevenLabs)
 - 📝 Supports large text files through automatic chunking
+- ✏️ Built-in Vim-inspired text editor for creating input files on the fly
 - 🎨 Multiple voice options and audio formats
 - ⚡ Adjustable speaking speed (OpenAI) and voice settings (ElevenLabs)
 - 🔄 Interactive mode for selecting voices and formats (when defaults are used)
 - 📁 Organized output with automatic file management
 - 🚀 Progress indicators during conversion
+- 🔑 Persistent API key storage via configuration file
 
 ## Prerequisites
 
-- Rust (latest stable version)
-- ffmpeg (for audio file combining)
-- API key for the target TTS service
+- [Rust](https://www.rust-lang.org/tools/install) (latest stable version) — only needed when building from source
+- [ffmpeg](https://ffmpeg.org/download.html) — required at runtime for combining audio chunks
+- An API key for the target TTS service ([OpenAI](https://platform.openai.com/api-keys) or [ElevenLabs](https://elevenlabs.io/))
 - Internet connection
+
+## Installation
+
+### From Source
+
+```bash
+git clone https://github.com/alexjsteffen/ttsrs.git
+cd ttsrs
+cargo build --release
+```
+
+The compiled binary will be at `target/release/ttsrs`. You can copy it to a directory in your `PATH`:
+
+```bash
+cp target/release/ttsrs /usr/local/bin/
+```
+
+### Pre-built Binaries
+
+Check the [Releases](https://github.com/alexjsteffen/ttsrs/releases) page for pre-built binaries for your platform.
+
+## Quick Start
+
+1. **Set your API key** (choose one method):
+   ```bash
+   # Via environment variable
+   export OPENAI_API_KEY='sk-...'
+
+   # Or pass it directly
+   ttsrs --apikey sk-... input.txt
+
+   # Or let ttsrs prompt you (the key will be saved for future use)
+   ttsrs input.txt
+   ```
+
+2. **Convert a text file to speech:**
+   ```bash
+   ttsrs input.txt
+   ```
+
+3. **Or use the interactive TUI:**
+   ```bash
+   ttsrs --tui
+   ```
 
 ## Usage
 
@@ -205,12 +265,16 @@ export ELEVENLABS_API_KEY='your-api-key-here'
 ttsrs --provider elevenlabs --elevenlabs-voice-id "your-voice-id" input.txt
 ```
 
-## Environment Variables
+## Configuration
 
-- `OPENAI_API_KEY`: Your OpenAI API key. The `--apikey` flag takes precedence if both are set.
-- `ELEVENLABS_API_KEY`: Your ElevenLabs API key. The `--apikey` flag takes precedence if both are set.
+### Environment Variables
 
-## Configuration File
+| Variable | Description |
+| -------- | ----------- |
+| `OPENAI_API_KEY` | Your OpenAI API key. The `--apikey` flag takes precedence if both are set. |
+| `ELEVENLABS_API_KEY` | Your ElevenLabs API key. The `--apikey` flag takes precedence if both are set. |
+
+### Configuration File
 
 ttsrs supports storing API keys in a configuration file for convenience. When you provide an API key via prompt (not through the command line or environment variable), it will be automatically saved to `.ttsrs_config.json` in the current directory for future use.
 
@@ -233,7 +297,7 @@ Priority order for API keys:
 - Text is automatically chunked based on token count (using `tiktoken_rs` with `cl100k_base`) to stay within API limits (approx. 500 tokens per chunk).
 - Each chunk is sent separately to the specified API endpoint.
 - Audio responses for each chunk are saved as temporary files.
-- `ffmpeg` is used to concatenate the temporary audio files into a single output file.
+- `ffmpeg` is used to concatenate the temporary audio files into a single output file, re-encoding with the appropriate codec to ensure continuous timestamps.
 - Temporary files are automatically cleaned up after successful combination.
 - Output is saved in a directory named after the input file.
 - **OpenAI**: Supports adjustable speaking speed via `--speed` and multiple voices/formats.
@@ -242,9 +306,33 @@ Priority order for API keys:
 
 ## Development
 
+### Building
+
+```bash
+cargo build          # Debug build
+cargo build --release # Optimized release build
+```
+
+### Testing
+
+```bash
+cargo test           # Run all tests
+cargo clippy         # Run linter
+```
+
 ### Code Signing (macOS)
 
-macOS builds are automatically code-signed in GitHub Actions using an Apple Developer certificate. For information on setting up code signing for your fork or development environment, see [CODESIGNING_SETUP.md](CODESIGNING_SETUP.md).
+macOS builds are automatically code-signed in GitHub Actions using an Apple Developer certificate. For information on setting up code signing for your fork or development environment, see [docs/CODESIGNING_SETUP.md](docs/CODESIGNING_SETUP.md).
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a pull request or open an issue.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/my-feature`)
+3. Commit your changes (`git commit -am 'Add my feature'`)
+4. Push to the branch (`git push origin feature/my-feature`)
+5. Open a Pull Request
 
 ## License
 

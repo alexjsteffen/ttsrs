@@ -1,4 +1,3 @@
-// Import necessary crates and modules
 use anyhow::{Context, Result};
 use chrono::Local;
 use clap::Parser;
@@ -7,6 +6,7 @@ use futures::stream::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -16,14 +16,21 @@ use tiktoken_rs::cl100k_base;
 mod editor;
 mod tui;
 
-// Define the TTS provider
 #[derive(Debug, Clone, PartialEq)]
 enum TtsProvider {
     OpenAI,
     ElevenLabs,
 }
 
-// Configuration structure for storing API keys
+impl fmt::Display for TtsProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TtsProvider::OpenAI => write!(f, "openai"),
+            TtsProvider::ElevenLabs => write!(f, "elevenlabs"),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct Config {
     openai_api_key: Option<String>,
@@ -31,12 +38,10 @@ struct Config {
 }
 
 impl Config {
-    /// Get the path to the config file in the current directory
     fn config_path() -> PathBuf {
         PathBuf::from(".ttsrs_config.json")
     }
 
-    /// Load the config from the file, or return a default config if it doesn't exist
     fn load() -> Result<Self> {
         let config_path = Self::config_path();
         if config_path.exists() {
@@ -48,7 +53,6 @@ impl Config {
         }
     }
 
-    /// Save the config to the file
     fn save(&self) -> Result<()> {
         let config_path = Self::config_path();
         let json = serde_json::to_string_pretty(self)?;
@@ -57,7 +61,6 @@ impl Config {
         Ok(())
     }
 
-    /// Get the API key for the specified provider
     fn get_api_key(&self, provider: &TtsProvider) -> Option<String> {
         match provider {
             TtsProvider::OpenAI => self.openai_api_key.clone(),
@@ -65,7 +68,6 @@ impl Config {
         }
     }
 
-    /// Set the API key for the specified provider
     fn set_api_key(&mut self, provider: &TtsProvider, api_key: String) {
         match provider {
             TtsProvider::OpenAI => self.openai_api_key = Some(api_key),
@@ -74,7 +76,7 @@ impl Config {
     }
 }
 
-// Define command-line arguments using the clap crate
+// Define command-line arguments using clap
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -134,10 +136,8 @@ struct Args {
 /// The main function of the program.
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Parse command-line arguments
     let mut args = Args::parse();
 
-    // If TUI mode is requested, run the TUI
     if args.tui {
         match tui::run_tui()? {
             Some(tui_args) => {
@@ -150,7 +150,6 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Determine the TTS provider
     let provider = match args.provider.to_lowercase().as_str() {
         "openai" => TtsProvider::OpenAI,
         "elevenlabs" => TtsProvider::ElevenLabs,
@@ -162,24 +161,19 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Load config file
     let mut config = Config::load().unwrap_or_default();
 
-    // Get the API key from command-line, environment variable, config file, or prompt
     let api_key = args.apikey.clone()
         .or_else(|| {
-            // Try environment variable
             match provider {
                 TtsProvider::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
                 TtsProvider::ElevenLabs => std::env::var("ELEVENLABS_API_KEY").ok(),
             }
         })
         .or_else(|| {
-            // Try config file
             config.get_api_key(&provider)
         })
         .or_else(|| {
-            // Prompt the user for the API key if not provided
             let prompt = match provider {
                 TtsProvider::OpenAI => "Enter your OpenAI API Key",
                 TtsProvider::ElevenLabs => "Enter your ElevenLabs API Key",
@@ -189,7 +183,6 @@ async fn main() -> Result<()> {
                 .interact_text()
                 .ok()?;
 
-            // Save the API key to the config file for future use
             config.set_api_key(&provider, input.clone());
             if let Err(e) = config.save() {
                 eprintln!("Warning: Failed to save API key to config file (.ttsrs_config.json): {}", e);
@@ -203,7 +196,6 @@ async fn main() -> Result<()> {
             "API key not provided. Set it via the --apikey flag, the appropriate environment variable, or input it when prompted."
         )?;
 
-    // Prompt for input file if not provided
     let input_file = args
         .input_file
         .clone()
@@ -218,7 +210,7 @@ async fn main() -> Result<()> {
 
     args.input_file = Some(input_file);
 
-    // Prompt for voice selection (for OpenAI only, ElevenLabs uses voice_id)
+    // Prompt for voice selection (OpenAI only; ElevenLabs uses voice_id)
     if provider == TtsProvider::OpenAI {
         let voices = vec![
             "Echo - Clear and professional, ideal for announcements.",
@@ -294,7 +286,6 @@ async fn main() -> Result<()> {
     // Initialize HTTP client
     let client = Client::new();
 
-    // Get the input file name and create an output directory
     let input_file_path = Path::new(args.input_file.as_ref().unwrap());
     let input_file_name = input_file_path
         .file_stem()
@@ -308,9 +299,8 @@ async fn main() -> Result<()> {
     let output_dir = Path::new("./").join(input_file_name);
     fs::create_dir_all(&output_dir)?;
 
-    // Read the input file and chunk the text
-    let lines = read_text_file(input_file_path)?; //
-    let chunks = chunk_text(&lines); //
+    let lines = read_text_file(input_file_path)?;
+    let chunks = chunk_text(&lines);
 
     // Determine the API endpoint URL
     let api_endpoint = if let Some(custom_url) = args.endpoint_url.as_deref() {
@@ -326,7 +316,6 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Generate audio files for each chunk
     let (timestamp, voice_used) = generate_audio_files(
         &chunks,
         &output_dir,
@@ -336,39 +325,26 @@ async fn main() -> Result<()> {
         &client,
         &api_key,
         args.speed,
-        &api_endpoint, // Pass the determined endpoint URL
+        &api_endpoint,
         &provider,
         &args.elevenlabs_model,
         args.elevenlabs_stability,
         args.elevenlabs_similarity,
     )
-    .await?; //
+    .await?;
 
-    // Notify the user about the generated files
     println!(
         "Chunk {} files are already in [ ./{} ] for ffmpeg to combine.\n\n",
-        args.format, // Use the selected format in the message
+        args.format,
         green_text(input_file_name)
     );
 
-    // Determine the output file extension
-    let output_ext = if args.format.starts_with("mp3") {
-        "mp3"
-    } else if args.format.starts_with("pcm") {
-        "pcm"
-    } else if args.format.starts_with("ulaw") {
-        "wav"
-    } else {
-        &args.format
-    };
+    let output_ext = format_to_extension(&args.format);
 
-    // Combine the audio files into a single output file
-    combine_audio_files(&output_dir, output_ext, &timestamp, &voice_used)?; //
+    combine_audio_files(&output_dir, output_ext, &timestamp, &voice_used)?;
 
-    // Remove temporary files
-    remove_tmp(&output_dir, output_ext, &timestamp, &voice_used)?; // Pass timestamp and voice to remove correct tmp files
+    remove_tmp(&output_dir, output_ext, &timestamp, &voice_used)?;
 
-    // Final message
     println!(
         "\nThe File [ {}/output.{} ] is ready for you. \n",
         green_text(input_file_name),
@@ -378,14 +354,37 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-// Formats text in green color for console output
+/// Returns the file extension for the given audio format string.
+fn format_to_extension(format: &str) -> &str {
+    if format.starts_with("mp3") {
+        "mp3"
+    } else if format.starts_with("pcm") {
+        "pcm"
+    } else if format.starts_with("ulaw") {
+        "wav"
+    } else {
+        format
+    }
+}
+
+/// Returns the ffmpeg encoder name for the given output format.
+fn encoder_for_format(format: &str) -> &str {
+    match format {
+        "mp3" => "libmp3lame",
+        "flac" => "flac",
+        "wav" | "pcm" => "pcm_s16le",
+        "opus" => "libopus",
+        "aac" => "aac",
+        _ => "flac",
+    }
+}
+
 fn green_text(text: &str) -> String {
     format!("\x1b[92m{}\x1b[0m", text)
 }
 
-// Reads a text file and returns its contents as a vector of strings
+/// Reads a text file and returns its non-empty lines.
 fn read_text_file(file_path: &Path) -> Result<Vec<String>> {
-    //
     let content = fs::read_to_string(file_path)?;
     Ok(content
         .lines()
@@ -394,49 +393,37 @@ fn read_text_file(file_path: &Path) -> Result<Vec<String>> {
         .collect())
 }
 
-// Chunks the input text into smaller pieces, each containing up to 500 tokens
+/// Chunks the input text into smaller pieces, each containing up to `MAX_TOKENS_PER_CHUNK` tokens.
 fn chunk_text(lines: &[String]) -> Vec<Vec<String>> {
-    //
-    // Initialize the tokenizer
     let bpe = cl100k_base().unwrap();
     let mut chunks = Vec::new();
     let mut current_chunk = Vec::new();
     let mut current_token_count = 0;
-    const MAX_TOKENS_PER_CHUNK: usize = 500; // Use a constant for clarity
+    const MAX_TOKENS_PER_CHUNK: usize = 500;
 
-    // Iterate over each line of text
     for line in lines {
-        // Calculate the number of tokens in the current line
         let line_token_count = bpe.encode_ordinary(line).len();
 
-        // If the line itself is too long, split it (basic split, could be improved)
         if line_token_count > MAX_TOKENS_PER_CHUNK {
-            // Handle very long lines if necessary (e.g., split them further)
-            // For now, we'll push the current chunk and add the long line as its own chunk
-            // (or potentially skip/error if that's preferred)
             if !current_chunk.is_empty() {
                 chunks.push(std::mem::take(&mut current_chunk));
             }
-            chunks.push(vec![line.clone()]); // Add the long line as a separate chunk
-            current_token_count = 0; // Reset token count for the next chunk
-            continue; // Move to the next line
+            chunks.push(vec![line.clone()]);
+            current_token_count = 0;
+            continue;
         }
 
-        // If adding this line exceeds the token limit, start a new chunk
         if current_token_count + line_token_count > MAX_TOKENS_PER_CHUNK {
             if !current_chunk.is_empty() {
-                // Ensure we don't push empty chunks
                 chunks.push(std::mem::take(&mut current_chunk));
             }
             current_token_count = 0;
         }
 
-        // Add the line to the current chunk and update the token count
         current_chunk.push(line.clone());
         current_token_count += line_token_count;
     }
 
-    // Add any remaining lines as the last chunk
     if !current_chunk.is_empty() {
         chunks.push(current_chunk);
     }
@@ -448,10 +435,8 @@ fn preview_prefix(input: &str, max_chars: usize) -> String {
     input.chars().take(max_chars).collect()
 }
 
-// Generates audio files for each chunk of text using the specified API endpoint
-// Returns (timestamp, voice_lowercase) for identifying the generated files
-// Note: clippy::too_many_arguments is allowed here because these parameters represent
-// distinct configuration options that are most clearly expressed as separate arguments
+/// Generates audio files for each chunk of text using the specified API endpoint.
+/// Returns `(timestamp, voice_lowercase)` for identifying the generated files.
 #[allow(clippy::too_many_arguments)]
 async fn generate_audio_files(
     chunks: &[Vec<String>],
@@ -462,27 +447,21 @@ async fn generate_audio_files(
     client: &Client,
     api_key: &str,
     speed: f32,
-    api_endpoint: &str, // Accept the API endpoint URL
+    api_endpoint: &str,
     provider: &TtsProvider,
     elevenlabs_model: &str,
     elevenlabs_stability: f32,
     elevenlabs_similarity: f32,
 ) -> Result<(String, String)> {
-    //
-    // Generate a timestamp for file naming with seconds for better uniqueness
     let date_time_string = Local::now().format("%Y%m%d%H%M%S").to_string();
-
-    // Convert voice name to lowercase for API call and filename
     let voice_lowercase = voice.to_lowercase();
 
-    // Iterate over each chunk
     for (i, chunk) in chunks.iter().enumerate() {
-        // Join the lines in the chunk into a single string
         let chunk_string = chunk.join(" ");
         println!("〰️〰️〰️〰️〰️〰️");
         println!(
             "{} {:06} of {}",
-            green_text("Processing chunk"), // Changed message slightly
+            green_text("Processing chunk"),
             i + 1,
             chunks.len()
         );
@@ -491,34 +470,27 @@ async fn generate_audio_files(
             preview_prefix(&chunk_string, 60)
         );
 
-        // Check if the chunk exceeds the character limit (provider-specific limit)
         let max_chars = match provider {
-            TtsProvider::OpenAI => 4096,     // OpenAI's documented limit
-            TtsProvider::ElevenLabs => 5000, // ElevenLabs has a 5000 character limit
+            TtsProvider::OpenAI => 4096,
+            TtsProvider::ElevenLabs => 5000,
         };
         if chunk_string.len() > max_chars {
-            eprintln!( // Use eprintln for errors
+            eprintln!(
                 "Warning: Chunk {:06} exceeds {} characters ({}). Attempting to process, but it might fail.",
                 i + 1,
                 max_chars,
                 chunk_string.len()
             );
-            // Optionally, you could truncate here:
-            // chunk_string = chunk_string[..max_chars].to_string();
-            // Or skip the chunk: continue;
-            // Or return an error: anyhow::bail!(...)
         }
 
-        // Show a progress bar while generating audio
         let pb = ProgressBar::new_spinner();
         pb.set_style(
             ProgressStyle::default_spinner()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
                 .template("{spinner:.green} {msg}")?,
         );
-        pb.set_message(format!("Sending chunk {} to API...", i + 1)); // More specific message
+        pb.set_message(format!("Sending chunk {} to API...", i + 1));
 
-        // Make the API request to the specified endpoint
         let (request_body, auth_header) = match provider {
             TtsProvider::OpenAI => {
                 let body = serde_json::json!({
@@ -547,7 +519,7 @@ async fn generate_audio_files(
         };
 
         let response = client
-            .post(api_endpoint) // Use the passed endpoint URL
+            .post(api_endpoint)
             .header(&auth_header.0, &auth_header.1)
             .header("Content-Type", "application/json")
             .json(&request_body)
@@ -564,22 +536,15 @@ async fn generate_audio_files(
                     i + 1,
                     e
                 ));
-                // Decide how to handle: continue to next chunk, or return error?
-                // For now, let's continue to allow processing other chunks
                 continue;
-                // Or return the error:
-                // return Err(e.into());
             }
         };
 
-        // Handle API errors
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = match response.text().await {
-                // Try to get text body for more info
-                Ok(text) => text,
-                Err(_) => "Could not read error response body".to_string(),
-            };
+            let error_text = response.text().await.unwrap_or_else(|_| {
+                "Could not read error response body".to_string()
+            });
 
             pb.finish_with_message(format!(
                 "❌ API Error for chunk {}: Status Code: {}. Response: {}",
@@ -587,24 +552,10 @@ async fn generate_audio_files(
                 status,
                 error_text
             ));
-            // Decide how to handle: continue or error out?
-            // Let's continue processing other chunks for now.
             continue;
-            // Or return an error:
-            // anyhow::bail!("API error for chunk {}: Status Code: {}. Response: {}", i+1, status, error_text);
         }
 
-        // Save the audio response to a file with voice and timestamp for uniqueness
-        // Extract the file extension based on format
-        let file_ext = if format.starts_with("mp3") {
-            "mp3"
-        } else if format.starts_with("pcm") {
-            "pcm"
-        } else if format.starts_with("ulaw") {
-            "wav" // ulaw is typically in wav container
-        } else {
-            format
-        };
+        let file_ext = format_to_extension(format);
         let file_name = format!(
             "tmp_{}_{}_chunk{:06}.{}",
             date_time_string,
@@ -614,8 +565,6 @@ async fn generate_audio_files(
         );
         let file_path = output_dir.join(&file_name);
 
-        // Stream the response and write it to the file
-        // Use try_fold for better error handling during streaming
         let file_result = async {
             let mut file = File::create(&file_path)?;
             let mut stream = response.bytes_stream();
@@ -624,24 +573,21 @@ async fn generate_audio_files(
                 file.write_all(&chunk_bytes)
                     .context("Failed to write chunk to file")?;
             }
-            Ok::<(), anyhow::Error>(()) // Explicitly type Ok value
+            Ok::<(), anyhow::Error>(())
         }
         .await;
 
         match file_result {
-            Ok(_) => pb.finish_with_message(format!(
+            Ok(()) => pb.finish_with_message(format!(
                 "✅ Chunk {} audio saved as {}",
                 i + 1,
                 file_path.display()
             )),
             Err(e) => {
                 pb.finish_with_message(format!("❌ Error saving audio for chunk {}: {}", i + 1, e));
-                // Clean up partially written file?
-                let _ = fs::remove_file(&file_path); // Attempt removal, ignore error if it fails
-                                                     // Continue to next chunk or return error? Let's continue.
-                continue;
-                // Or return the error:
-                // return Err(e);
+                if let Err(rm_err) = fs::remove_file(&file_path) {
+                    eprintln!("Warning: Failed to clean up partial file {}: {}", file_path.display(), rm_err);
+                }
             }
         }
     }
@@ -656,34 +602,32 @@ fn combine_audio_files(
     timestamp: &str,
     voice: &str,
 ) -> Result<()> {
-    //
-    // Collect all the temporary files for this specific run (matching timestamp, voice, and format)
     let mut input_files = Vec::new();
     let prefix = format!("tmp_{}_{}_", timestamp, voice);
     for entry in fs::read_dir(output_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_file() && // Ensure it's a file
-            path
+        if path.is_file()
+            && path
                 .extension()
-                .map(|ext| ext.to_str() == Some(format)) // Compare extension safely
-                .unwrap_or(false) &&
-            path.file_name()
-                .and_then(|name| name.to_str()) // Safely get filename as str
-                .map(|name_str| name_str.starts_with(&prefix)) // Check for specific prefix with timestamp and voice
+                .map(|ext| ext.to_str() == Some(format))
+                .unwrap_or(false)
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|name_str| name_str.starts_with(&prefix))
                 .unwrap_or(false)
         {
             input_files.push(path);
         }
     }
 
-    // Check if there are any files to combine
     if input_files.is_empty() {
         println!(
             "No temporary audio files found to combine for format '{}'. Skipping combination.",
             format
         );
-        return Ok(()); // Not an error, just nothing to do
+        return Ok(());
     }
 
     println!(
@@ -692,60 +636,42 @@ fn combine_audio_files(
         format
     );
 
-    // Sort the files to ensure they are combined in the correct order
     input_files.sort();
 
-    // Construct the ffmpeg command arguments using a temporary file list for safety with many files
     let list_file_path = output_dir.join("ffmpeg_list.txt");
     {
-        // Scope for file handle to ensure it's closed before ffmpeg runs
         let mut list_file = File::create(&list_file_path)?;
         for input_file in &input_files {
-            // Use only the filename (not the full path) since ffmpeg_list.txt is in the same directory
             let filename = input_file
                 .file_name()
                 .and_then(|name| name.to_str())
                 .context("Failed to get filename")?;
             writeln!(list_file, "file '{}'", filename)?;
         }
-    } // list_file goes out of scope and is closed
+    }
 
     let output_file_path = output_dir.join(format!("output.{}", format));
-
-    // ffmpeg command using the file list with re-encoding to fix timestamp issues
-    // Re-encoding ensures continuous timestamps instead of copying discontinuous ones
-    // Choose appropriate encoder based on output format
-    let encoder = match format {
-        "mp3" => "libmp3lame",
-        "flac" => "flac",
-        "wav" => "pcm_s16le",
-        "pcm" => "pcm_s16le",
-        "opus" => "libopus",
-        "aac" => "aac",
-        _ => "flac", // Default to flac for unknown formats
-    };
+    let encoder = encoder_for_format(format);
 
     let ffmpeg_args = vec![
         "-f",
         "concat",
         "-safe",
-        "0", // Needed if paths are relative or contain certain characters
+        "0",
         "-i",
         list_file_path.to_str().unwrap(),
         "-c:a",
-        encoder, // Re-encode with appropriate codec to fix timestamps
-        "-y",    // Overwrite output files without asking
+        encoder,
+        "-y",
         output_file_path.to_str().unwrap(),
     ];
 
-    // Execute the ffmpeg command
-    println!("Running ffmpeg command..."); // Log before running
+    println!("Running ffmpeg command...");
     let ffmpeg_output = Command::new("ffmpeg")
         .args(&ffmpeg_args)
-        .output() // Use output() to capture stderr
+        .output()
         .context("Failed to execute ffmpeg command. Is ffmpeg installed and in your PATH?")?;
 
-    // Clean up the temporary list file regardless of ffmpeg success
     let _ = fs::remove_file(&list_file_path);
 
     if !ffmpeg_output.status.success() {
@@ -766,7 +692,6 @@ fn combine_audio_files(
 
 /// Removes temporary files from the output directory matching the specified format, timestamp, and voice.
 fn remove_tmp(output_dir: &Path, format: &str, timestamp: &str, voice: &str) -> Result<()> {
-    //
     let mut removed_count = 0;
     let prefix = format!("tmp_{}_{}_", timestamp, voice);
     for entry in fs::read_dir(output_dir)? {
@@ -798,11 +723,10 @@ fn remove_tmp(output_dir: &Path, format: &str, timestamp: &str, voice: &str) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::preview_prefix;
+    use super::{encoder_for_format, format_to_extension, preview_prefix};
 
     #[test]
     fn test_encoder_selection() {
-        // Test that the correct encoder is selected for each format
         let test_cases = vec![
             ("mp3", "libmp3lame"),
             ("flac", "flac"),
@@ -810,25 +734,28 @@ mod tests {
             ("pcm", "pcm_s16le"),
             ("opus", "libopus"),
             ("aac", "aac"),
-            ("unknown", "flac"), // Default case
+            ("unknown", "flac"),
         ];
 
         for (format, expected_encoder) in test_cases {
-            let encoder = match format {
-                "mp3" => "libmp3lame",
-                "flac" => "flac",
-                "wav" => "pcm_s16le",
-                "pcm" => "pcm_s16le",
-                "opus" => "libopus",
-                "aac" => "aac",
-                _ => "flac",
-            };
             assert_eq!(
-                encoder, expected_encoder,
+                encoder_for_format(format),
+                expected_encoder,
                 "Format '{}' should use encoder '{}'",
-                format, expected_encoder
+                format,
+                expected_encoder
             );
         }
+    }
+
+    #[test]
+    fn test_format_to_extension() {
+        assert_eq!(format_to_extension("mp3"), "mp3");
+        assert_eq!(format_to_extension("mp3_44100_128"), "mp3");
+        assert_eq!(format_to_extension("pcm_16000"), "pcm");
+        assert_eq!(format_to_extension("ulaw_8000"), "wav");
+        assert_eq!(format_to_extension("flac"), "flac");
+        assert_eq!(format_to_extension("opus"), "opus");
     }
 
     #[test]
