@@ -443,6 +443,31 @@ where
     }
 }
 
+/// Returns the highlighted style for the focused field or the normal color for unfocused fields.
+fn field_style(is_focused: bool, normal_color: Color) -> Style {
+    if is_focused {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(normal_color)
+    }
+}
+
+/// Returns the display text for a text-editable field, taking editing state into account.
+fn editing_text<'a>(
+    app: &'a TuiApp,
+    field: &FocusedField,
+    stored_value: &'a str,
+) -> String {
+    if let Some(ref editing) = app.editing_field {
+        if &app.focused_field == field {
+            return editing.clone();
+        }
+    }
+    stored_value.to_string()
+}
+
 fn ui(f: &mut Frame, app: &mut TuiApp) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -496,13 +521,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         } else {
             "ElevenLabs"
         };
-        let style = if app.focused_field == FocusedField::Provider {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Cyan)
-        };
+        let style = field_style(app.focused_field == FocusedField::Provider, Color::Cyan);
         let provider = Paragraph::new(format!("{}  [Options: OpenAI, ElevenLabs]", provider_text))
             .style(style)
             .block(
@@ -516,27 +535,13 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // Input file
     if app.fields.contains(&FocusedField::InputFile) {
-        let text = if let Some(ref editing) = app.editing_field {
-            if app.focused_field == FocusedField::InputFile {
-                editing.clone()
-            } else {
-                app.input_file.clone()
-            }
-        } else {
-            app.input_file.clone()
-        };
+        let text = editing_text(app, &FocusedField::InputFile, &app.input_file);
         let display_text = if text.is_empty() {
             "[Enter path to text file]".to_string()
         } else {
             text
         };
-        let style = if app.focused_field == FocusedField::InputFile {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::White)
-        };
+        let style = field_style(app.focused_field == FocusedField::InputFile, Color::White);
         let input_file = Paragraph::new(display_text).style(style).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -548,13 +553,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // Create Text File option (opens internal text editor)
     if app.fields.contains(&FocusedField::CreateTextFile) {
-        let style = if app.focused_field == FocusedField::CreateTextFile {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::LightGreen)
-        };
+        let style = field_style(app.focused_field == FocusedField::CreateTextFile, Color::LightGreen);
         let create_file = Paragraph::new("[ Open Text Editor ]").style(style).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -569,13 +568,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         let voices = get_openai_voices();
         let voice_text = voices[app.voice];
         let voice_count = voices.len();
-        let style = if app.focused_field == FocusedField::Voice {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Magenta)
-        };
+        let style = field_style(app.focused_field == FocusedField::Voice, Color::Magenta);
         let voice = Paragraph::new(format!(
             "{}  [{}/{} voices - Use ← → to browse]",
             voice_text,
@@ -594,22 +587,8 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // Model
     if app.fields.contains(&FocusedField::Model) {
-        let text = if let Some(ref editing) = app.editing_field {
-            if app.focused_field == FocusedField::Model {
-                editing.clone()
-            } else {
-                app.model.clone()
-            }
-        } else {
-            app.model.clone()
-        };
-        let style = if app.focused_field == FocusedField::Model {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::White)
-        };
+        let text = editing_text(app, &FocusedField::Model, &app.model);
+        let style = field_style(app.focused_field == FocusedField::Model, Color::White);
         let model = Paragraph::new(text).style(style).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -624,13 +603,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         let formats = get_formats(app.provider);
         let format_text = formats[app.format];
         let format_count = formats.len();
-        let style = if app.focused_field == FocusedField::Format {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Blue)
-        };
+        let style = field_style(app.focused_field == FocusedField::Format, Color::Blue);
         let format_opts = if app.provider == 0 {
             "mp3, flac, wav, pcm, opus, aac"
         } else {
@@ -655,22 +628,8 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // Speed (OpenAI only)
     if app.fields.contains(&FocusedField::Speed) {
-        let text = if let Some(ref editing) = app.editing_field {
-            if app.focused_field == FocusedField::Speed {
-                editing.clone()
-            } else {
-                app.speed.clone()
-            }
-        } else {
-            app.speed.clone()
-        };
-        let style = if app.focused_field == FocusedField::Speed {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::White)
-        };
+        let text = editing_text(app, &FocusedField::Speed, &app.speed);
+        let style = field_style(app.focused_field == FocusedField::Speed, Color::White);
         let speed = Paragraph::new(text).style(style).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -682,27 +641,13 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // ElevenLabs Voice ID
     if app.fields.contains(&FocusedField::ElevenLabsVoiceId) {
-        let text = if let Some(ref editing) = app.editing_field {
-            if app.focused_field == FocusedField::ElevenLabsVoiceId {
-                editing.clone()
-            } else {
-                app.elevenlabs_voice_id.clone()
-            }
-        } else {
-            app.elevenlabs_voice_id.clone()
-        };
+        let text = editing_text(app, &FocusedField::ElevenLabsVoiceId, &app.elevenlabs_voice_id);
         let display_text = if text.is_empty() {
             "[Enter ElevenLabs voice ID from voice library]".to_string()
         } else {
             text
         };
-        let style = if app.focused_field == FocusedField::ElevenLabsVoiceId {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::White)
-        };
+        let style = field_style(app.focused_field == FocusedField::ElevenLabsVoiceId, Color::White);
         let voice_id = Paragraph::new(display_text).style(style).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -714,22 +659,8 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // ElevenLabs Model
     if app.fields.contains(&FocusedField::ElevenLabsModel) {
-        let text = if let Some(ref editing) = app.editing_field {
-            if app.focused_field == FocusedField::ElevenLabsModel {
-                editing.clone()
-            } else {
-                app.elevenlabs_model.clone()
-            }
-        } else {
-            app.elevenlabs_model.clone()
-        };
-        let style = if app.focused_field == FocusedField::ElevenLabsModel {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::White)
-        };
+        let text = editing_text(app, &FocusedField::ElevenLabsModel, &app.elevenlabs_model);
+        let style = field_style(app.focused_field == FocusedField::ElevenLabsModel, Color::White);
         let el_model = Paragraph::new(text).style(style).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -741,22 +672,8 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // Stability (ElevenLabs only)
     if app.fields.contains(&FocusedField::Stability) {
-        let text = if let Some(ref editing) = app.editing_field {
-            if app.focused_field == FocusedField::Stability {
-                editing.clone()
-            } else {
-                app.stability.clone()
-            }
-        } else {
-            app.stability.clone()
-        };
-        let style = if app.focused_field == FocusedField::Stability {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::White)
-        };
+        let text = editing_text(app, &FocusedField::Stability, &app.stability);
+        let style = field_style(app.focused_field == FocusedField::Stability, Color::White);
         let stability = Paragraph::new(text).style(style).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -768,22 +685,8 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // Similarity (ElevenLabs only)
     if app.fields.contains(&FocusedField::Similarity) {
-        let text = if let Some(ref editing) = app.editing_field {
-            if app.focused_field == FocusedField::Similarity {
-                editing.clone()
-            } else {
-                app.similarity.clone()
-            }
-        } else {
-            app.similarity.clone()
-        };
-        let style = if app.focused_field == FocusedField::Similarity {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::White)
-        };
+        let text = editing_text(app, &FocusedField::Similarity, &app.similarity);
+        let style = field_style(app.focused_field == FocusedField::Similarity, Color::White);
         let similarity = Paragraph::new(text).style(style).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -795,7 +698,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // API Key
     if app.fields.contains(&FocusedField::ApiKey) {
-        let text = if let Some(ref editing) = app.editing_field {
+        let masked = if let Some(ref editing) = app.editing_field {
             if app.focused_field == FocusedField::ApiKey {
                 "*".repeat(editing.len())
             } else {
@@ -804,18 +707,12 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         } else {
             "*".repeat(app.api_key.len())
         };
-        let display_text = if text.is_empty() {
+        let display_text = if masked.is_empty() {
             "[Press Enter to enter your API key securely]".to_string()
         } else {
-            text
+            masked
         };
-        let style = if app.focused_field == FocusedField::ApiKey {
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Red)
-        };
+        let style = field_style(app.focused_field == FocusedField::ApiKey, Color::Red);
         let api_key = Paragraph::new(display_text).style(style).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -827,13 +724,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // Submit button
     if app.fields.contains(&FocusedField::Submit) {
-        let style = if app.focused_field == FocusedField::Submit {
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(Color::Green)
-        };
+        let style = field_style(app.focused_field == FocusedField::Submit, Color::Green);
         let submit = Paragraph::new("[ Generate Audio ]")
             .style(style)
             .block(Block::default().borders(Borders::ALL));
