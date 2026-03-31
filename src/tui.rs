@@ -698,7 +698,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // API Key
     if app.fields.contains(&FocusedField::ApiKey) {
-        let masked = if let Some(ref editing) = app.editing_field {
+        let masked_text = if let Some(ref editing) = app.editing_field {
             if app.focused_field == FocusedField::ApiKey {
                 "*".repeat(editing.len())
             } else {
@@ -707,10 +707,10 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         } else {
             "*".repeat(app.api_key.len())
         };
-        let display_text = if masked.is_empty() {
+        let display_text = if masked_text.is_empty() {
             "[Press Enter to enter your API key securely]".to_string()
         } else {
-            masked
+            masked_text
         };
         let style = field_style(app.focused_field == FocusedField::ApiKey, Color::Red);
         let api_key = Paragraph::new(display_text).style(style).block(
