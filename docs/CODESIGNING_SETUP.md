@@ -96,8 +96,6 @@ Copy the entire string including the quotes.
 
 **Note:** You only need to configure one of the two notarization methods. If you configure both, the API Key method will be used.
 
-## Security Notes
-
 ## Step 5: Verify the Setup
 
 Once you've added all the secrets:
