@@ -2,6 +2,12 @@
 name = "ttsrs"
 version = "0.1.1"
 edition = "2021"
+description = "A command-line tool for converting text to speech using OpenAI or ElevenLabs APIs"
+license = "MIT"
+repository = "https://github.com/alexjsteffen/ttsrs"
+readme = "README.md"
+keywords = ["tts", "text-to-speech", "openai", "elevenlabs", "cli"]
+categories = ["command-line-utilities", "multimedia::audio"]
 
 [dependencies]
 reqwest = { version = "0.13", features = ["json", "stream"] }
