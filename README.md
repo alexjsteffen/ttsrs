@@ -8,16 +8,16 @@ A fast, feature-rich command-line tool for converting text to speech using [Open
 
 ## Features
 
-- 🎯 Easy-to-use command-line interface with sensible defaults
-- 🖥️ Interactive TUI (Terminal User Interface) for guided configuration
-- ✏️ Built-in Vim-inspired text editor for creating input files on the fly
-- 🔊 High-quality TTS via OpenAI, ElevenLabs, or custom endpoints
-- 📝 Automatic chunking for large text files
-- 🎨 Multiple voice options and audio formats per provider
-- ⚡ Adjustable speaking speed (OpenAI) and voice settings (ElevenLabs)
-- 📁 Organized output with automatic file management
-- 🚀 Progress indicators during conversion
-- 🔑 Persistent API key storage via configuration file
+- Easy-to-use command-line interface with sensible defaults
+- Interactive TUI (Terminal User Interface) for guided configuration
+- Built-in Vim-inspired text editor for creating input files on the fly
+- High-quality TTS via OpenAI, ElevenLabs, or custom endpoints
+- Automatic chunking for large text files
+- Multiple voice options and audio formats per provider
+- Adjustable speaking speed (OpenAI) and voice settings (ElevenLabs)
+- Organized output with automatic file management
+- Progress indicators during conversion
+- Persistent API key storage via configuration file
 
 ## Prerequisites
 
