@@ -94,8 +94,16 @@ impl Config {
 
 /// Command-line arguments for ttsrs.
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Text-to-speech CLI using OpenAI or ElevenLabs APIs")]
+#[command(
+    author,
+    version,
+    about = "Text-to-speech CLI using OpenAI or ElevenLabs APIs"
+)]
 struct Args {
+    /// Use classic command-line mode (default launches interactive TUI)
+    #[arg(long)]
+    cli: bool,
+
     /// Input text file path
     #[arg()]
     input_file: Option<String>,
@@ -153,7 +161,8 @@ struct Args {
 async fn main() -> Result<()> {
     let mut args = Args::parse();
 
-    if args.tui {
+    let launch_tui = !args.cli || args.tui;
+    if launch_tui {
         match tui::run_tui()? {
             Some(tui_args) => {
                 args = tui_args;
@@ -331,13 +340,8 @@ async fn main() -> Result<()> {
         elevenlabs_similarity: args.elevenlabs_similarity,
     };
 
-    let (timestamp, voice_used) = generate_audio_files(
-        &chunks,
-        &output_dir,
-        &client,
-        &gen_config,
-    )
-    .await?;
+    let (timestamp, voice_used) =
+        generate_audio_files(&chunks, &output_dir, &client, &gen_config).await?;
 
     println!(
         "Chunk {} files are already in [ ./{} ] for ffmpeg to combine.\n\n",
@@ -475,10 +479,7 @@ async fn generate_audio_files(
             i + 1,
             chunks.len()
         );
-        println!(
-            "Input String: {}...",
-            preview_prefix(&chunk_string, 60)
-        );
+        println!("Input String: {}...", preview_prefix(&chunk_string, 60));
 
         let max_chars = match config.provider {
             TtsProvider::OpenAI => 4096,
@@ -512,7 +513,10 @@ async fn generate_audio_files(
                 });
                 (
                     body,
-                    ("Authorization".to_string(), format!("Bearer {}", config.api_key)),
+                    (
+                        "Authorization".to_string(),
+                        format!("Bearer {}", config.api_key),
+                    ),
                 )
             }
             TtsProvider::ElevenLabs => {
@@ -552,9 +556,10 @@ async fn generate_audio_files(
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| {
-                "Could not read error response body".to_string()
-            });
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Could not read error response body".to_string());
 
             pb.finish_with_message(format!(
                 "❌ API Error for chunk {}: Status Code: {}. Response: {}",
@@ -596,7 +601,11 @@ async fn generate_audio_files(
             Err(e) => {
                 pb.finish_with_message(format!("❌ Error saving audio for chunk {}: {}", i + 1, e));
                 if let Err(rm_err) = fs::remove_file(&file_path) {
-                    eprintln!("Warning: Failed to clean up partial file {}: {}", file_path.display(), rm_err);
+                    eprintln!(
+                        "Warning: Failed to clean up partial file {}: {}",
+                        file_path.display(),
+                        rm_err
+                    );
                 }
             }
         }
