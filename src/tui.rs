@@ -608,7 +608,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         chunk_idx += 1;
     }
 
-    // Voice selector (OpenAI only)
+    // Voice selector for OpenAI-compatible providers (including Custom)
     if app.fields.contains(&FocusedField::Voice) {
         let voices = get_openai_voices();
         let voice_text = voices[app.voice];
