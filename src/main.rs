@@ -464,6 +464,81 @@ fn chunk_text(text: &str) -> Vec<String> {
     chunks
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MAX_TOKENS_PER_CHUNK: usize = 500;
+
+    fn token_count(text: &str) -> usize {
+        cl100k_base().unwrap().encode_ordinary(text).len()
+    }
+
+    fn build_line_with_min_tokens(min_tokens: usize) -> String {
+        let mut line = String::from("word");
+        while token_count(&line) < min_tokens {
+            line.push_str(" word");
+        }
+        line
+    }
+
+    fn build_line_with_max_tokens(max_tokens: usize) -> String {
+        let mut line = String::new();
+        for _ in 0..max_tokens {
+            let candidate = if line.is_empty() {
+                "word".to_string()
+            } else {
+                format!("{} word", line)
+            };
+
+            if token_count(&candidate) > max_tokens {
+                break;
+            }
+
+            line = candidate;
+        }
+        line
+    }
+
+    #[test]
+    fn chunk_text_starts_new_chunk_at_token_boundary() {
+        let line1 = build_line_with_max_tokens(200);
+        let line2 = build_line_with_max_tokens(200);
+        let line3 = build_line_with_max_tokens(200);
+        let input = format!("{}\n{}\n{}", line1, line2, line3);
+
+        let chunks = chunk_text(&input);
+
+        assert_eq!(chunks, vec![format!("{} {}", line1, line2), line3]);
+        assert!(token_count(&chunks[0]) <= MAX_TOKENS_PER_CHUNK);
+        assert!(token_count(&chunks[1]) <= MAX_TOKENS_PER_CHUNK);
+    }
+
+    #[test]
+    fn chunk_text_skips_blank_lines_and_joins_with_spaces() {
+        let input = "first line\n\n   \nsecond line\n\t\nthird line";
+
+        let chunks = chunk_text(input);
+
+        assert_eq!(chunks, vec!["first line second line third line"]);
+    }
+
+    #[test]
+    fn chunk_text_keeps_oversized_line_as_its_own_chunk() {
+        let prefix = build_line_with_max_tokens(100);
+        let oversized = build_line_with_min_tokens(MAX_TOKENS_PER_CHUNK + 1);
+        let suffix = build_line_with_max_tokens(100);
+        let input = format!("{}\n{}\n{}", prefix, oversized, suffix);
+
+        let chunks = chunk_text(&input);
+
+        assert_eq!(chunks, vec![prefix.clone(), oversized.clone(), suffix.clone()]);
+        assert!(token_count(&oversized) > MAX_TOKENS_PER_CHUNK);
+        assert!(token_count(&chunks[0]) <= MAX_TOKENS_PER_CHUNK);
+        assert!(token_count(&chunks[2]) <= MAX_TOKENS_PER_CHUNK);
+    }
+}
+
 fn preview_prefix(input: &str, max_chars: usize) -> String {
     input.chars().take(max_chars).collect()
 }
