@@ -10,6 +10,7 @@ keywords = ["tts", "text-to-speech", "openai", "elevenlabs", "cli"]
 categories = ["command-line-utilities", "multimedia::audio"]
 
 [dependencies]
+ffmpeg-sidecar = "2.5.0"
 reqwest = { version = "0.13", features = ["json", "stream"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }

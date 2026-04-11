@@ -10,9 +10,10 @@ use std::fmt;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::str::FromStr;
 use tiktoken_rs::cl100k_base;
+use ffmpeg_sidecar::command::FfmpegCommand;
+use ffmpeg_sidecar::download::auto_download;
 
 mod editor;
 mod tui;
@@ -702,6 +703,13 @@ fn combine_audio_files(
     let output_file_path = output_dir.join(format!("output.{}", format));
     let encoder = encoder_for_format(format);
 
+    println!("Checking for internal ffmpeg...");
+    // Auto-download handles checking if it already exists and downloading if not
+    if let Err(e) = auto_download() {
+        eprintln!("Warning: Failed to ensure internal ffmpeg is available: {}", e);
+        eprintln!("It will fallback to attempting to use a system-installed ffmpeg.");
+    }
+
     let ffmpeg_args = vec![
         "-f",
         "concat",
@@ -715,11 +723,14 @@ fn combine_audio_files(
         output_file_path.to_str().unwrap(),
     ];
 
-    println!("Running ffmpeg command...");
-    let ffmpeg_output = Command::new("ffmpeg")
-        .args(&ffmpeg_args)
+    println!("Running internal ffmpeg command...");
+    let mut ffmpeg_command = FfmpegCommand::new();
+    ffmpeg_command.args(&ffmpeg_args);
+
+    // Fallback to calling inner process output directly
+    let ffmpeg_output = ffmpeg_command.as_inner_mut()
         .output()
-        .context("Failed to execute ffmpeg command. Is ffmpeg installed and in your PATH?")?;
+        .context("Failed to execute ffmpeg command. Is ffmpeg available?")?;
 
     let _ = fs::remove_file(&list_file_path);
 
