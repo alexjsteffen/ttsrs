@@ -21,6 +21,7 @@ mod tui;
 enum TtsProvider {
     OpenAI,
     ElevenLabs,
+    Custom,
 }
 
 impl fmt::Display for TtsProvider {
@@ -28,6 +29,7 @@ impl fmt::Display for TtsProvider {
         match self {
             TtsProvider::OpenAI => write!(f, "openai"),
             TtsProvider::ElevenLabs => write!(f, "elevenlabs"),
+            TtsProvider::Custom => write!(f, "custom"),
         }
     }
 }
@@ -39,8 +41,9 @@ impl FromStr for TtsProvider {
         match s.to_lowercase().as_str() {
             "openai" => Ok(TtsProvider::OpenAI),
             "elevenlabs" => Ok(TtsProvider::ElevenLabs),
+            "custom" => Ok(TtsProvider::Custom),
             other => anyhow::bail!(
-                "Invalid provider '{}'. Must be 'openai' or 'elevenlabs'",
+                "Invalid provider '{}'. Must be 'openai', 'elevenlabs', or 'custom'",
                 other
             ),
         }
@@ -77,10 +80,11 @@ impl Config {
         Ok(())
     }
 
-    fn get_api_key(&self, provider: &TtsProvider) -> Option<String> {
+    fn get_api_key(&self, provider: &TtsProvider) -> Option<&String> {
         match provider {
-            TtsProvider::OpenAI => self.openai_api_key.clone(),
-            TtsProvider::ElevenLabs => self.elevenlabs_api_key.clone(),
+            TtsProvider::OpenAI => self.openai_api_key.as_ref(),
+            TtsProvider::ElevenLabs => self.elevenlabs_api_key.as_ref(),
+            _ => None,
         }
     }
 
@@ -88,6 +92,7 @@ impl Config {
         match provider {
             TtsProvider::OpenAI => self.openai_api_key = Some(api_key),
             TtsProvider::ElevenLabs => self.elevenlabs_api_key = Some(api_key),
+            _ => {}
         }
     }
 }
@@ -182,26 +187,38 @@ async fn main() -> Result<()> {
         .or_else(|| match provider {
             TtsProvider::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
             TtsProvider::ElevenLabs => std::env::var("ELEVENLABS_API_KEY").ok(),
+            TtsProvider::Custom => None,
         })
-        .or_else(|| config.get_api_key(&provider))
+        .or_else(|| config.get_api_key(&provider).cloned())
         .or_else(|| {
             let prompt = match provider {
                 TtsProvider::OpenAI => "Enter your OpenAI API Key",
                 TtsProvider::ElevenLabs => "Enter your ElevenLabs API Key",
+                TtsProvider::Custom => "Enter your Custom API Key (or press Enter to skip)",
             };
-            let input: String = Input::new()
-                .with_prompt(prompt)
-                .interact_text()
-                .ok()?;
 
-            config.set_api_key(&provider, input.clone());
-            if let Err(e) = config.save() {
-                eprintln!("Warning: Failed to save API key to config file (.ttsrs_config.json): {}", e);
+            if provider == TtsProvider::Custom {
+                let input: String = Input::new()
+                    .with_prompt(prompt)
+                    .allow_empty(true)
+                    .interact_text()
+                    .unwrap_or_default();
+                Some(input)
             } else {
-                println!("API key saved to config file (.ttsrs_config.json) for future use.");
-            }
+                let input: String = Input::new()
+                    .with_prompt(prompt)
+                    .interact_text()
+                    .ok()?;
 
-            Some(input)
+                config.set_api_key(&provider, input.clone());
+                if let Err(e) = config.save() {
+                    eprintln!("Warning: Failed to save API key to config file (.ttsrs_config.json): {}", e);
+                } else {
+                    println!("API key saved to config file (.ttsrs_config.json) for future use.");
+                }
+
+                Some(input)
+            }
         })
         .context(
             "API key not provided. Set it via the --apikey flag, the appropriate environment variable, or input it when prompted."
@@ -261,7 +278,7 @@ async fn main() -> Result<()> {
 
     // Prompt for output format
     let formats = match provider {
-        TtsProvider::OpenAI => vec!["mp3", "flac", "wav", "pcm", "opus", "aac"],
+        TtsProvider::OpenAI | TtsProvider::Custom => vec!["mp3", "flac", "wav", "pcm", "opus", "aac"],
         TtsProvider::ElevenLabs => vec![
             "mp3_44100_128",
             "mp3_44100_192",
@@ -277,11 +294,11 @@ async fn main() -> Result<()> {
         args.format = "mp3_44100_128".to_string();
     }
 
-    if (provider == TtsProvider::OpenAI && args.format.to_lowercase() == "flac")
+    if ((provider == TtsProvider::OpenAI || provider == TtsProvider::Custom) && args.format.to_lowercase() == "flac")
         || (provider == TtsProvider::ElevenLabs && args.format == "mp3_44100_128")
     {
         // Only prompt if default is used
-        let default_idx = if provider == TtsProvider::OpenAI {
+        let default_idx = if provider == TtsProvider::OpenAI || provider == TtsProvider::Custom {
             1
         } else {
             0
@@ -310,8 +327,8 @@ async fn main() -> Result<()> {
     let output_dir = Path::new("./").join(input_file_name);
     fs::create_dir_all(&output_dir)?;
 
-    let lines = read_text_file(input_file_path)?;
-    let chunks = chunk_text(&lines);
+    let text_content = read_text_file(input_file_path)?;
+    let chunks = chunk_text(&text_content);
 
     // Determine the API endpoint URL
     let api_endpoint = if let Some(custom_url) = args.endpoint_url.as_deref() {
@@ -319,6 +336,12 @@ async fn main() -> Result<()> {
     } else {
         match provider {
             TtsProvider::OpenAI => "https://api.openai.com/v1/audio/speech".to_string(),
+            TtsProvider::Custom => {
+                let input: String = Input::new()
+                    .with_prompt("Enter the custom API endpoint URL")
+                    .interact_text()?;
+                input
+            }
             TtsProvider::ElevenLabs => {
                 let voice_id = args.elevenlabs_voice_id.as_ref()
                     .context("ElevenLabs voice ID is required when using ElevenLabs provider. Use --elevenlabs-voice-id")?;
@@ -393,32 +416,28 @@ fn green_text(text: &str) -> String {
     format!("\x1b[92m{}\x1b[0m", text)
 }
 
-/// Reads a text file and returns its non-empty lines.
-fn read_text_file(file_path: &Path) -> Result<Vec<String>> {
+/// Reads a text file and returns its content as a single string.
+fn read_text_file(file_path: &Path) -> Result<String> {
     let content = fs::read_to_string(file_path)?;
-    Ok(content
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(String::from)
-        .collect())
+    Ok(content)
 }
 
 /// Chunks the input text into smaller pieces, each containing up to `MAX_TOKENS_PER_CHUNK` tokens.
-fn chunk_text(lines: &[String]) -> Vec<Vec<String>> {
+fn chunk_text(text: &str) -> Vec<String> {
     let bpe = cl100k_base().unwrap();
     let mut chunks = Vec::new();
-    let mut current_chunk = Vec::new();
+    let mut current_chunk = String::new();
     let mut current_token_count = 0;
     const MAX_TOKENS_PER_CHUNK: usize = 500;
 
-    for line in lines {
+    for line in text.lines().filter(|line| !line.trim().is_empty()) {
         let line_token_count = bpe.encode_ordinary(line).len();
 
         if line_token_count > MAX_TOKENS_PER_CHUNK {
             if !current_chunk.is_empty() {
                 chunks.push(std::mem::take(&mut current_chunk));
             }
-            chunks.push(vec![line.clone()]);
+            chunks.push(line.to_string());
             current_token_count = 0;
             continue;
         }
@@ -430,7 +449,10 @@ fn chunk_text(lines: &[String]) -> Vec<Vec<String>> {
             current_token_count = 0;
         }
 
-        current_chunk.push(line.clone());
+        if !current_chunk.is_empty() {
+            current_chunk.push(' ');
+        }
+        current_chunk.push_str(line);
         current_token_count += line_token_count;
     }
 
@@ -462,7 +484,7 @@ struct AudioGenConfig<'a> {
 /// Generates audio files for each chunk of text using the specified API endpoint.
 /// Returns `(timestamp, voice_lowercase)` for identifying the generated files.
 async fn generate_audio_files(
-    chunks: &[Vec<String>],
+    chunks: &[String],
     output_dir: &Path,
     client: &Client,
     config: &AudioGenConfig<'_>,
@@ -470,8 +492,7 @@ async fn generate_audio_files(
     let date_time_string = Local::now().format("%Y%m%d%H%M%S").to_string();
     let voice_lowercase = config.voice.to_lowercase();
 
-    for (i, chunk) in chunks.iter().enumerate() {
-        let chunk_string = chunk.join(" ");
+    for (i, chunk_string) in chunks.iter().enumerate() {
         println!("〰️〰️〰️〰️〰️〰️");
         println!(
             "{} {:06} of {}",
@@ -484,6 +505,7 @@ async fn generate_audio_files(
         let max_chars = match config.provider {
             TtsProvider::OpenAI => 4096,
             TtsProvider::ElevenLabs => 5000,
+            _ => 5000,
         };
         if chunk_string.len() > max_chars {
             eprintln!(
@@ -503,7 +525,7 @@ async fn generate_audio_files(
         pb.set_message(format!("Sending chunk {} to API...", i + 1));
 
         let (request_body, auth_header) = match config.provider {
-            TtsProvider::OpenAI => {
+            TtsProvider::OpenAI | TtsProvider::Custom => {
                 let body = serde_json::json!({
                     "model": config.model,
                     "voice": voice_lowercase,
@@ -511,11 +533,16 @@ async fn generate_audio_files(
                     "speed": config.speed,
                     "response_format": config.format,
                 });
+                let auth_value = if config.api_key.is_empty() && *config.provider == TtsProvider::Custom {
+                    "".to_string()
+                } else {
+                    format!("Bearer {}", config.api_key)
+                };
                 (
                     body,
                     (
                         "Authorization".to_string(),
-                        format!("Bearer {}", config.api_key),
+                        auth_value,
                     ),
                 )
             }
@@ -532,13 +559,16 @@ async fn generate_audio_files(
             }
         };
 
-        let response = client
+        let mut request = client
             .post(config.api_endpoint)
-            .header(&auth_header.0, &auth_header.1)
             .header("Content-Type", "application/json")
-            .json(&request_body)
-            .send()
-            .await;
+            .json(&request_body);
+
+        if !auth_header.1.is_empty() {
+            request = request.header(&auth_header.0, &auth_header.1);
+        }
+
+        let response = request.send().await;
 
         pb.set_message(format!("Waiting for response for chunk {}...", i + 1));
 

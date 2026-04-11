@@ -107,7 +107,7 @@ ttsrs [OPTIONS] [INPUT_FILE]
 | `INPUT_FILE` | Path to the input text file | _(prompted)_ |
 | `--cli` | Use classic command-line flow instead of TUI | `false` |
 | `--tui` | Force interactive TUI mode | `true` when `--cli` is not used |
-| `--provider` | TTS provider (`openai` or `elevenlabs`) | `openai` |
+| `--provider` | TTS provider (`openai`, `elevenlabs`, or `custom`) | `openai` |
 | `-m`, `--model` | TTS model | `tts-1-hd` |
 | `-v`, `--voice` | Voice name (OpenAI only) | `alloy` |
 | `-f`, `--format` | Output audio format | `flac` (OpenAI) |
@@ -169,8 +169,19 @@ ttsrs --cli input.txt
 # Explicit settings
 ttsrs --cli --voice nova --format mp3 --speed 1.2 --apikey sk-... input.txt
 
-# Custom endpoint (e.g., LM Studio)
-ttsrs --cli --endpoint-url "http://localhost:1234/v1/audio/speech" --apikey N/A input.txt
+```
+
+### Custom Endpoints (e.g., LocalAI, LM Studio)
+
+```bash
+# Interactive Mode
+ttsrs # Select 'Custom' as provider
+
+# Classic CLI mode
+ttsrs --cli --provider custom --endpoint-url "http://localhost:1234/v1/audio/speech" input.txt
+
+# Explicit settings
+ttsrs --cli --provider custom --endpoint-url "http://localhost:1234/v1/audio/speech" --voice alloy --format wav input.txt
 ```
 
 ### ElevenLabs
@@ -220,6 +231,7 @@ When you provide an API key via the interactive prompt, it is saved to `.ttsrs_c
 ## Technical Details
 
 - Text is automatically chunked based on token count (~500 tokens per chunk via `tiktoken_rs` with `cl100k_base`) to stay within API limits.
+- Processing utilizes efficient chunking via zero-copy slice references avoiding unnecessary string allocations during the chunking phase.
 - Each chunk is sent as a separate API request; responses are streamed to temporary files.
 - `ffmpeg` concatenates the temporary audio files into a single output, re-encoding with the appropriate codec for continuous timestamps.
 - Temporary files are cleaned up automatically after a successful combination.
