@@ -98,7 +98,7 @@ impl TuiApp {
     fn update_fields(&mut self) {
         // Update available fields based on provider
         self.fields = if self.provider == 0 {
-            // OpenAI
+            // OpenAI (built-in provider)
             vec![
                 FocusedField::Provider,
                 FocusedField::InputFile,
@@ -125,7 +125,7 @@ impl TuiApp {
                 FocusedField::Submit,
             ]
         } else {
-            // Custom
+            // Custom (OpenAI-compatible endpoint; also supports Speed)
             vec![
                 FocusedField::Provider,
                 FocusedField::InputFile,
