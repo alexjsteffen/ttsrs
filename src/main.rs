@@ -240,40 +240,43 @@ async fn main() -> Result<()> {
     args.input_file = Some(input_file);
 
     // Prompt for voice selection (OpenAI only; ElevenLabs uses voice_id)
-    if provider == TtsProvider::OpenAI {
-        let voices = vec![
-            "Echo - Clear and professional, ideal for announcements.",
-            "Fable - Warm and engaging, perfect for storytelling.",
-            "Onyx - Deep and authoritative.",
-            "Nova - Young and energetic.",
-            "Shimmer - Soft and soothing.",
-            "Alloy - Versatile and well-balanced.",
-            "Ash - Clear and conversational.",
-            "Coral - Warm and friendly.",
-            "Sage - Calm and measured.",
-        ];
-        if args.voice.to_lowercase() == "alloy" {
-            // Only prompt if default is used (case-insensitive comparison)
-            let selection = Select::new()
-                .with_prompt("Select a voice")
-                .items(&voices)
-                .default(5) // Set default index for Alloy
-                .interact()?;
-            // Extract only the voice name before the hyphen
-            args.voice = voices[selection]
-                .split(" - ")
-                .next()
-                .unwrap_or("alloy")
-                .to_lowercase()
-                .to_string();
+    match provider {
+        TtsProvider::OpenAI | TtsProvider::Custom => {
+            let voices = vec![
+                "Echo - Clear and professional, ideal for announcements.",
+                "Fable - Warm and engaging, perfect for storytelling.",
+                "Onyx - Deep and authoritative.",
+                "Nova - Young and energetic.",
+                "Shimmer - Soft and soothing.",
+                "Alloy - Versatile and well-balanced.",
+                "Ash - Clear and conversational.",
+                "Coral - Warm and friendly.",
+                "Sage - Calm and measured.",
+            ];
+            if args.voice.to_lowercase() == "alloy" {
+                // Only prompt if default is used (case-insensitive comparison)
+                let selection = Select::new()
+                    .with_prompt("Select a voice")
+                    .items(&voices)
+                    .default(5) // Set default index for Alloy
+                    .interact()?;
+                // Extract only the voice name before the hyphen
+                args.voice = voices[selection]
+                    .split(" - ")
+                    .next()
+                    .unwrap_or("alloy")
+                    .to_lowercase()
+                    .to_string();
+            }
         }
-    } else {
-        // For ElevenLabs, ensure voice_id is provided
-        if args.elevenlabs_voice_id.is_none() {
-            let input: String = Input::new()
-                .with_prompt("Enter the ElevenLabs voice ID (or run with --elevenlabs-voice-id)")
-                .interact_text()?;
-            args.elevenlabs_voice_id = Some(input);
+        TtsProvider::ElevenLabs => {
+            // For ElevenLabs, ensure voice_id is provided
+            if args.elevenlabs_voice_id.is_none() {
+                let input: String = Input::new()
+                    .with_prompt("Enter the ElevenLabs voice ID (or run with --elevenlabs-voice-id)")
+                    .interact_text()?;
+                args.elevenlabs_voice_id = Some(input);
+            }
         }
     }
 
