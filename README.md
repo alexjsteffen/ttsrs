@@ -229,7 +229,7 @@ When you provide an API key via the interactive prompt, it is saved to `.ttsrs_c
 ## Technical Details
 
 - Text is automatically chunked based on token count (~500 tokens per chunk via `tiktoken_rs` with `cl100k_base`) to stay within API limits.
-- Processing utilizes efficient chunking via zero-copy slice references avoiding unnecessary string allocations during the chunking phase.
+- Processing builds owned `String` chunks during chunking before sending them to the TTS provider, rather than using zero-copy slice references.
 - Each chunk is sent as a separate API request; responses are streamed to temporary files.
 - `ffmpeg` concatenates the temporary audio files into a single output, re-encoding with the appropriate codec for continuous timestamps (an internal `ffmpeg` is automatically downloaded to avoid external dependencies).
 - Temporary files are cleaned up automatically after a successful combination.
