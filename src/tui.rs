@@ -289,8 +289,16 @@ impl TuiApp {
             voice,
             format,
             speed,
-            apikey: Some(self.api_key.clone()),
-            endpoint_url: if self.provider == 2 { Some(self.custom_endpoint_url.clone()) } else { None },
+            apikey: if self.api_key.trim().is_empty() {
+                None
+            } else {
+                Some(self.api_key.clone())
+            },
+            endpoint_url: if self.provider == 2 && !self.custom_endpoint_url.trim().is_empty() {
+                Some(self.custom_endpoint_url.clone())
+            } else {
+                None
+            },
             provider,
             elevenlabs_voice_id: if self.provider == 1 {
                 Some(self.elevenlabs_voice_id.clone())
