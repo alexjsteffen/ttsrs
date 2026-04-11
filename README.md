@@ -53,21 +53,21 @@ export OPENAI_API_KEY='sk-...'        # environment variable
 ttsrs --apikey sk-... input.txt       # inline flag
 ttsrs input.txt                       # interactive prompt (saves key for reuse)
 
-# 2. Convert a text file to speech
-ttsrs input.txt
+# 2. Launch interactive TUI (new default)
+ttsrs
 
-# 3. Or use the interactive TUI
-ttsrs --tui
+# 3. Or use classic CLI mode
+ttsrs --cli input.txt
 ```
 
 ## Usage
 
 ### TUI Mode
 
-Launch the interactive terminal UI with `--tui`:
+Launch the interactive terminal UI by running `ttsrs` (or `ttsrs --tui`):
 
 ```bash
-ttsrs --tui
+ttsrs
 ```
 
 The TUI lets you:
@@ -105,7 +105,8 @@ ttsrs [OPTIONS] [INPUT_FILE]
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `INPUT_FILE` | Path to the input text file | _(prompted)_ |
-| `--tui` | Launch interactive TUI | — |
+| `--cli` | Use classic command-line flow instead of TUI | `false` |
+| `--tui` | Force interactive TUI mode | `true` when `--cli` is not used |
 | `--provider` | TTS provider (`openai` or `elevenlabs`) | `openai` |
 | `-m`, `--model` | TTS model | `tts-1-hd` |
 | `-v`, `--voice` | Voice name (OpenAI only) | `alloy` |
@@ -159,24 +160,27 @@ Pass the voice ID with `--elevenlabs-voice-id`.
 ### OpenAI
 
 ```bash
-# Basic — prompts for voice and format
-ttsrs input.txt
+# Default interactive mode
+ttsrs
+
+# Classic CLI mode — prompts for voice and format
+ttsrs --cli input.txt
 
 # Explicit settings
-ttsrs --voice nova --format mp3 --speed 1.2 --apikey sk-... input.txt
+ttsrs --cli --voice nova --format mp3 --speed 1.2 --apikey sk-... input.txt
 
 # Custom endpoint (e.g., LM Studio)
-ttsrs --endpoint-url "http://localhost:1234/v1/audio/speech" --apikey N/A input.txt
+ttsrs --cli --endpoint-url "http://localhost:1234/v1/audio/speech" --apikey N/A input.txt
 ```
 
 ### ElevenLabs
 
 ```bash
 # Basic
-ttsrs --provider elevenlabs --elevenlabs-voice-id "21m00Tcm4TlvDq8ikWAM" input.txt
+ttsrs --cli --provider elevenlabs --elevenlabs-voice-id "21m00Tcm4TlvDq8ikWAM" input.txt
 
 # Full configuration
-ttsrs --provider elevenlabs \
+ttsrs --cli --provider elevenlabs \
   --elevenlabs-voice-id "21m00Tcm4TlvDq8ikWAM" \
   --elevenlabs-model "eleven_turbo_v2_5" \
   --elevenlabs-stability 0.6 \
@@ -184,6 +188,14 @@ ttsrs --provider elevenlabs \
   --format mp3_44100_192 \
   input.txt
 ```
+
+## Best Practices
+
+- Use the default TUI (`ttsrs`) for discoverability and fewer mistakes when switching providers/settings.
+- Use `--cli` for scripting and automation so runs are deterministic and non-interactive.
+- Prefer environment variables for API keys in CI/CD (`OPENAI_API_KEY`, `ELEVENLABS_API_KEY`) instead of prompts.
+- Pin explicit output settings in scripts (`--provider`, `--voice`, `--format`, `--model`) to avoid accidental default changes.
+- Keep `ffmpeg` installed and available on `PATH` before running batch conversions.
 
 ## Configuration
 

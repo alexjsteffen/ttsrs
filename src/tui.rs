@@ -261,6 +261,7 @@ impl TuiApp {
         };
 
         Ok(Args {
+            cli: false,
             input_file: Some(self.input_file.clone()),
             model: self.model.clone(),
             voice,
@@ -455,11 +456,7 @@ fn field_style(is_focused: bool, normal_color: Color) -> Style {
 }
 
 /// Returns the display text for a text-editable field, taking editing state into account.
-fn editing_text<'a>(
-    app: &'a TuiApp,
-    field: &FocusedField,
-    stored_value: &'a str,
-) -> String {
+fn editing_text<'a>(app: &'a TuiApp, field: &FocusedField, stored_value: &'a str) -> String {
     if let Some(ref editing) = app.editing_field {
         if &app.focused_field == field {
             return editing.clone();
@@ -553,7 +550,10 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // Create Text File option (opens internal text editor)
     if app.fields.contains(&FocusedField::CreateTextFile) {
-        let style = field_style(app.focused_field == FocusedField::CreateTextFile, Color::LightGreen);
+        let style = field_style(
+            app.focused_field == FocusedField::CreateTextFile,
+            Color::LightGreen,
+        );
         let create_file = Paragraph::new("[ Open Text Editor ]").style(style).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -641,13 +641,20 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
 
     // ElevenLabs Voice ID
     if app.fields.contains(&FocusedField::ElevenLabsVoiceId) {
-        let text = editing_text(app, &FocusedField::ElevenLabsVoiceId, &app.elevenlabs_voice_id);
+        let text = editing_text(
+            app,
+            &FocusedField::ElevenLabsVoiceId,
+            &app.elevenlabs_voice_id,
+        );
         let display_text = if text.is_empty() {
             "[Enter ElevenLabs voice ID from voice library]".to_string()
         } else {
             text
         };
-        let style = field_style(app.focused_field == FocusedField::ElevenLabsVoiceId, Color::White);
+        let style = field_style(
+            app.focused_field == FocusedField::ElevenLabsVoiceId,
+            Color::White,
+        );
         let voice_id = Paragraph::new(display_text).style(style).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -660,7 +667,10 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
     // ElevenLabs Model
     if app.fields.contains(&FocusedField::ElevenLabsModel) {
         let text = editing_text(app, &FocusedField::ElevenLabsModel, &app.elevenlabs_model);
-        let style = field_style(app.focused_field == FocusedField::ElevenLabsModel, Color::White);
+        let style = field_style(
+            app.focused_field == FocusedField::ElevenLabsModel,
+            Color::White,
+        );
         let el_model = Paragraph::new(text).style(style).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -766,7 +776,7 @@ mod tests {
     fn test_provider_switch() {
         let mut app = TuiApp::new();
         assert_eq!(app.provider, 0); // OpenAI
-        // Verify OpenAI specific fields are present
+                                     // Verify OpenAI specific fields are present
         assert!(app.fields.contains(&FocusedField::Provider));
         assert!(app.fields.contains(&FocusedField::InputFile));
         assert!(app.fields.contains(&FocusedField::CreateTextFile));
