@@ -126,13 +126,17 @@ ttsrs [OPTIONS] [INPUT_FILE]
 |-------|-------------|
 | **alloy** | Versatile, well-balanced |
 | **ash** | Clear and conversational |
+| **ballad** | Warm and engaging |
+| **cedar** | Clear and measured |
 | **coral** | Warm and friendly |
 | **echo** | Clear and professional |
 | **fable** | Warm and engaging, great for storytelling |
+| **marin** | Calm and measured |
 | **nova** | Young and energetic |
 | **onyx** | Deep and authoritative |
 | **sage** | Calm and measured |
 | **shimmer** | Soft and soothing |
+| **verse** | Dynamic and expressive |
 
 #### ElevenLabs Voices
 
@@ -174,13 +178,13 @@ ttsrs --cli --voice nova --format mp3 --speed 1.2 --apikey sk-... input.txt
 
 ```bash
 # Interactive Mode
-ttsrs # Select 'Custom' as provider
+ttsrs # Select 'Custom' as provider, then enter your custom endpoint URL and custom voice name
 
 # Classic CLI mode
 ttsrs --cli --provider custom --endpoint-url "http://localhost:1234/v1/audio/speech" input.txt
 
-# Explicit settings
-ttsrs --cli --provider custom --endpoint-url "http://localhost:1234/v1/audio/speech" --voice alloy --format wav input.txt
+# Explicit settings (including custom voice)
+ttsrs --cli --provider custom --endpoint-url "http://localhost:1234/v1/audio/speech" --voice "my_custom_voice_name" --format wav input.txt
 ```
 
 ### ElevenLabs
