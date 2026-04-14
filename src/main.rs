@@ -581,11 +581,15 @@ async fn generate_audio_files(
         let file_path = output_dir.join(&file_name);
 
         let file_result = async {
-            let mut file = File::create(&file_path)?;
+            use tokio::io::AsyncWriteExt;
+            let mut file = tokio::fs::File::create(&file_path)
+                .await
+                .context("Failed to create file")?;
             let mut stream = response.bytes_stream();
             while let Some(item) = stream.next().await {
                 let chunk_bytes = item.context("Failed to read chunk from response stream")?;
                 file.write_all(&chunk_bytes)
+                    .await
                     .context("Failed to write chunk to file")?;
             }
             Ok::<(), anyhow::Error>(())
