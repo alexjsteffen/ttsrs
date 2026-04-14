@@ -26,6 +26,9 @@ enum FocusedField {
     Format,
     Speed,
     ApiKey,
+    // Custom specific fields
+    CustomEndpointUrl,
+    CustomVoice,
     // ElevenLabs specific fields
     ElevenLabsVoiceId,
     ElevenLabsModel,
@@ -38,12 +41,14 @@ pub struct TuiApp {
     focused_field: FocusedField,
     fields: Vec<FocusedField>,
     input_file: String,
-    provider: usize, // 0 = OpenAI, 1 = ElevenLabs
+    provider: usize, // 0 = OpenAI, 1 = ElevenLabs, 2 = Custom
     voice: usize,
     model: String,
     format: usize,
     speed: String,
     api_key: String,
+    custom_endpoint_url: String,
+    custom_voice: String,
     elevenlabs_voice_id: String,
     elevenlabs_model: String,
     stability: String,
@@ -77,11 +82,13 @@ impl TuiApp {
             fields,
             input_file: String::new(),
             provider: 0,
-            voice: 5, // Default to Alloy
+            voice: 0, // Default to Alloy
             model: "tts-1-hd".to_string(),
             format: 1, // Default to flac for OpenAI
             speed: "1.0".to_string(),
             api_key: String::new(),
+            custom_endpoint_url: "http://localhost:1234/v1/audio/speech".to_string(),
+            custom_voice: String::new(),
             elevenlabs_voice_id: String::new(),
             elevenlabs_model: "eleven_turbo_v2_5".to_string(),
             stability: "0.5".to_string(),
@@ -94,7 +101,7 @@ impl TuiApp {
     fn update_fields(&mut self) {
         // Update available fields based on provider
         self.fields = if self.provider == 0 {
-            // OpenAI
+            // OpenAI (built-in provider)
             vec![
                 FocusedField::Provider,
                 FocusedField::InputFile,
@@ -106,7 +113,7 @@ impl TuiApp {
                 FocusedField::ApiKey,
                 FocusedField::Submit,
             ]
-        } else {
+        } else if self.provider == 1 {
             // ElevenLabs
             vec![
                 FocusedField::Provider,
@@ -117,6 +124,20 @@ impl TuiApp {
                 FocusedField::Format,
                 FocusedField::Stability,
                 FocusedField::Similarity,
+                FocusedField::ApiKey,
+                FocusedField::Submit,
+            ]
+        } else {
+            // Custom (OpenAI-compatible endpoint; also supports Speed)
+            vec![
+                FocusedField::Provider,
+                FocusedField::InputFile,
+                FocusedField::CreateTextFile,
+                FocusedField::CustomEndpointUrl,
+                FocusedField::CustomVoice,
+                FocusedField::Model,
+                FocusedField::Format,
+                FocusedField::Speed,
                 FocusedField::ApiKey,
                 FocusedField::Submit,
             ]
@@ -164,6 +185,8 @@ impl TuiApp {
             FocusedField::Model => &self.model,
             FocusedField::Speed => &self.speed,
             FocusedField::ApiKey => &self.api_key,
+            FocusedField::CustomEndpointUrl => &self.custom_endpoint_url,
+            FocusedField::CustomVoice => &self.custom_voice,
             FocusedField::ElevenLabsVoiceId => &self.elevenlabs_voice_id,
             FocusedField::ElevenLabsModel => &self.elevenlabs_model,
             FocusedField::Stability => &self.stability,
@@ -180,6 +203,8 @@ impl TuiApp {
                 FocusedField::Model => self.model = text,
                 FocusedField::Speed => self.speed = text,
                 FocusedField::ApiKey => self.api_key = text,
+                FocusedField::CustomEndpointUrl => self.custom_endpoint_url = text,
+                FocusedField::CustomVoice => self.custom_voice = text,
                 FocusedField::ElevenLabsVoiceId => self.elevenlabs_voice_id = text,
                 FocusedField::ElevenLabsModel => self.elevenlabs_model = text,
                 FocusedField::Stability => self.stability = text,
@@ -193,11 +218,11 @@ impl TuiApp {
         match self.focused_field {
             FocusedField::Provider => {
                 self.provider = if is_right {
-                    (self.provider + 1) % 2
+                    (self.provider + 1) % 3
                 } else if self.provider == 0 {
-                    1
+                    2
                 } else {
-                    0
+                    self.provider - 1
                 };
                 self.update_fields();
             }
@@ -228,8 +253,10 @@ impl TuiApp {
     pub fn to_args(&self) -> Result<Args> {
         let provider = if self.provider == 0 {
             "openai".to_string()
-        } else {
+        } else if self.provider == 1 {
             "elevenlabs".to_string()
+        } else {
+            "custom".to_string()
         };
 
         let voice = if self.provider == 0 {
@@ -238,6 +265,12 @@ impl TuiApp {
                 .next()
                 .unwrap()
                 .to_lowercase()
+        } else if self.provider == 2 {
+            if self.custom_voice.trim().is_empty() {
+                "alloy".to_string()
+            } else {
+                self.custom_voice.clone()
+            }
         } else {
             String::new()
         };
@@ -267,8 +300,16 @@ impl TuiApp {
             voice,
             format,
             speed,
-            apikey: Some(self.api_key.clone()),
-            endpoint_url: None,
+            apikey: if self.api_key.trim().is_empty() {
+                None
+            } else {
+                Some(self.api_key.clone())
+            },
+            endpoint_url: if self.provider == 2 && !self.custom_endpoint_url.trim().is_empty() {
+                Some(self.custom_endpoint_url.clone())
+            } else {
+                None
+            },
             provider,
             elevenlabs_voice_id: if self.provider == 1 {
                 Some(self.elevenlabs_voice_id.clone())
@@ -285,20 +326,24 @@ impl TuiApp {
 
 fn get_openai_voices() -> Vec<&'static str> {
     vec![
-        "Echo - Clear and professional, ideal for announcements",
-        "Fable - Warm and engaging, perfect for storytelling",
-        "Onyx - Deep and authoritative",
-        "Nova - Young and energetic",
-        "Shimmer - Soft and soothing",
         "Alloy - Versatile and well-balanced",
         "Ash - Clear and conversational",
+        "Ballad - Warm and engaging",
+        "Cedar - Clear and measured",
         "Coral - Warm and friendly",
+        "Echo - Clear and professional, ideal for announcements",
+        "Fable - Warm and engaging, perfect for storytelling",
+        "Marin - Calm and measured",
+        "Nova - Young and energetic",
+        "Onyx - Deep and authoritative",
         "Sage - Calm and measured",
+        "Shimmer - Soft and soothing",
+        "Verse - Dynamic and expressive",
     ]
 }
 
 fn get_formats(provider: usize) -> Vec<&'static str> {
-    if provider == 0 {
+    if provider == 0 || provider == 2 {
         vec!["mp3", "flac", "wav", "pcm", "opus", "aac"]
     } else {
         vec![
@@ -515,11 +560,13 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
     if app.fields.contains(&FocusedField::Provider) {
         let provider_text = if app.provider == 0 {
             "OpenAI"
-        } else {
+        } else if app.provider == 1 {
             "ElevenLabs"
+        } else {
+            "Custom"
         };
         let style = field_style(app.focused_field == FocusedField::Provider, Color::Cyan);
-        let provider = Paragraph::new(format!("{}  [Options: OpenAI, ElevenLabs]", provider_text))
+        let provider = Paragraph::new(format!("{}  [Options: OpenAI, ElevenLabs, Custom]", provider_text))
             .style(style)
             .block(
                 Block::default()
@@ -563,7 +610,20 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         chunk_idx += 1;
     }
 
-    // Voice selector (OpenAI only)
+    // Custom Endpoint URL
+    if app.fields.contains(&FocusedField::CustomEndpointUrl) {
+        let text = editing_text(app, &FocusedField::CustomEndpointUrl, &app.custom_endpoint_url);
+        let style = field_style(app.focused_field == FocusedField::CustomEndpointUrl, Color::White);
+        let custom_endpoint_url = Paragraph::new(text).style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Custom Endpoint URL (Press Enter to edit)"),
+        );
+        f.render_widget(custom_endpoint_url, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // Voice selector for OpenAI providers
     if app.fields.contains(&FocusedField::Voice) {
         let voices = get_openai_voices();
         let voice_text = voices[app.voice];
@@ -582,6 +642,24 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
                 .title("Voice Selection"),
         );
         f.render_widget(voice, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // Custom Voice
+    if app.fields.contains(&FocusedField::CustomVoice) {
+        let text = editing_text(app, &FocusedField::CustomVoice, &app.custom_voice);
+        let display_text = if text.is_empty() {
+            "[Press Enter to enter custom voice name, default: alloy]".to_string()
+        } else {
+            text
+        };
+        let style = field_style(app.focused_field == FocusedField::CustomVoice, Color::Magenta);
+        let custom_voice = Paragraph::new(display_text).style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Custom Voice (Press Enter to edit)"),
+        );
+        f.render_widget(custom_voice, form_chunks[chunk_idx]);
         chunk_idx += 1;
     }
 
@@ -604,7 +682,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         let format_text = formats[app.format];
         let format_count = formats.len();
         let style = field_style(app.focused_field == FocusedField::Format, Color::Blue);
-        let format_opts = if app.provider == 0 {
+        let format_opts = if app.provider == 0 || app.provider == 2 {
             "mp3, flac, wav, pcm, opus, aac"
         } else {
             "mp3_44100_128/192, pcm_16000/22050/24000/44100"
@@ -718,15 +796,24 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
             "*".repeat(app.api_key.len())
         };
         let display_text = if masked_text.is_empty() {
-            "[Press Enter to enter your API key securely]".to_string()
+            if app.provider == 2 {
+                "[Press Enter to enter API key - Optional for Custom endpoints]".to_string()
+            } else {
+                "[Press Enter to enter your API key securely]".to_string()
+            }
         } else {
             masked_text
         };
         let style = field_style(app.focused_field == FocusedField::ApiKey, Color::Red);
+        let title_text = if app.provider == 2 {
+            "API Key (Optional for some custom endpoints)"
+        } else {
+            "API Key (Required - will be saved to config file)"
+        };
         let api_key = Paragraph::new(display_text).style(style).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("API Key (Required - will be saved to config file)"),
+                .title(title_text),
         );
         f.render_widget(api_key, form_chunks[chunk_idx]);
         chunk_idx += 1;
@@ -765,7 +852,7 @@ mod tests {
     fn test_tui_app_new() {
         let app = TuiApp::new();
         assert_eq!(app.provider, 0);
-        assert_eq!(app.voice, 5);
+        assert_eq!(app.voice, 0); // Default to Alloy, now index 0
         assert_eq!(app.model, "tts-1-hd");
         assert_eq!(app.format, 1);
         assert_eq!(app.speed, "1.0");
@@ -838,6 +925,7 @@ mod tests {
         let mut app = TuiApp::new();
         app.input_file = "test.txt".to_string();
         app.api_key = "test_key".to_string();
+        app.voice = 0; // Alloy is now at index 0
 
         let args = app.to_args().unwrap();
         assert_eq!(args.input_file, Some("test.txt".to_string()));
@@ -862,8 +950,8 @@ mod tests {
     #[test]
     fn test_get_openai_voices() {
         let voices = get_openai_voices();
-        assert_eq!(voices.len(), 9);
-        assert!(voices[5].contains("Alloy"));
+        assert_eq!(voices.len(), 13);
+        assert!(voices[0].contains("Alloy"));
     }
 
     #[test]
@@ -886,11 +974,14 @@ mod tests {
         app.handle_left_right(true); // Right
         assert_eq!(app.provider, 1);
 
+        app.handle_left_right(true); // Right again
+        assert_eq!(app.provider, 2);
+
         app.handle_left_right(true); // Right again (should wrap)
         assert_eq!(app.provider, 0);
 
         app.handle_left_right(false); // Left
-        assert_eq!(app.provider, 1);
+        assert_eq!(app.provider, 2);
     }
 
     #[test]
