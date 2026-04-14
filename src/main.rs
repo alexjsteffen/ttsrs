@@ -614,6 +614,19 @@ async fn generate_audio_files(
     Ok((date_time_string, voice_lowercase))
 }
 
+/// Safely quotes a filename for use in an ffmpeg concat list file.
+/// According to FFmpeg concat demuxer documentation:
+/// "special characters and spaces must be escaped with backslash or single quotes."
+fn quote_ffmpeg_filename(filename: &str) -> Result<String> {
+    if filename.contains('\n') || filename.contains('\r') {
+        anyhow::bail!("Filename contains newline characters, which are not supported in ffmpeg concat lists");
+    }
+    // We wrap the filename in single quotes.
+    // Inside single quotes, we need to escape backslashes and single quotes using backslashes.
+    let escaped = filename.replace('\\', "\\\\").replace('\'', "\\'");
+    Ok(format!("'{}'", escaped))
+}
+
 /// Combines all the generated temporary audio files into a single file using ffmpeg.
 fn combine_audio_files(
     output_dir: &Path,
@@ -665,7 +678,7 @@ fn combine_audio_files(
                 .file_name()
                 .and_then(|name| name.to_str())
                 .context("Failed to get filename")?;
-            writeln!(list_file, "file '{}'", filename)?;
+            writeln!(list_file, "file {}", quote_ffmpeg_filename(filename)?)?;
         }
     }
 
@@ -742,7 +755,26 @@ fn remove_tmp(output_dir: &Path, format: &str, timestamp: &str, voice: &str) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::{encoder_for_format, format_to_extension, preview_prefix};
+    use super::{encoder_for_format, format_to_extension, preview_prefix, quote_ffmpeg_filename};
+
+    #[test]
+    fn test_quote_ffmpeg_filename() {
+        assert_eq!(quote_ffmpeg_filename("normal.mp3").unwrap(), "'normal.mp3'");
+        assert_eq!(
+            quote_ffmpeg_filename("file'with'quote.mp3").unwrap(),
+            "'file\\'with\\'quote.mp3'"
+        );
+        assert_eq!(
+            quote_ffmpeg_filename("file with spaces.mp3").unwrap(),
+            "'file with spaces.mp3'"
+        );
+        assert_eq!(
+            quote_ffmpeg_filename("file\\with\\backslash.mp3").unwrap(),
+            "'file\\\\with\\\\backslash.mp3'"
+        );
+        assert!(quote_ffmpeg_filename("file\nwith\nnewline.mp3").is_err());
+        assert!(quote_ffmpeg_filename("file\rwith\rreturn.mp3").is_err());
+    }
 
     #[test]
     fn test_encoder_selection() {
