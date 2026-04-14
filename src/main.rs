@@ -297,7 +297,7 @@ async fn main() -> Result<()> {
     // Initialize HTTP client
     let client = Client::new();
 
-    let input_file_path = Path::new(args.input_file.as_ref().unwrap());
+    let input_file_path = Path::new(args.input_file.as_ref().context("Input file path is missing")?);
     let input_file_name = input_file_path
         .file_stem()
         .context("Invalid input file")?
@@ -678,11 +678,11 @@ fn combine_audio_files(
         "-safe",
         "0",
         "-i",
-        list_file_path.to_str().unwrap(),
+        list_file_path.to_str().context("Invalid UTF-8 in list file path")?,
         "-c:a",
         encoder,
         "-y",
-        output_file_path.to_str().unwrap(),
+        output_file_path.to_str().context("Invalid UTF-8 in output file path")?,
     ];
 
     println!("Running ffmpeg command...");
