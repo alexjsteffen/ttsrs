@@ -412,7 +412,7 @@ fn encoder_for_format(format: &str) -> &str {
         "wav" | "pcm" => "pcm_s16le",
         "opus" => "libopus",
         "aac" => "aac",
-        _ => "flac",
+        _ => "libmp3lame",
     }
 }
 
@@ -872,7 +872,8 @@ mod tests {
             ("pcm", "pcm_s16le"),
             ("opus", "libopus"),
             ("aac", "aac"),
-            ("unknown", "flac"),
+            ("unknown", "libmp3lame"),
+            ("mp3_44100_128", "libmp3lame"),
         ];
 
         for (format, expected_encoder) in test_cases {
