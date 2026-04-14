@@ -239,26 +239,30 @@ async fn main() -> Result<()> {
 
     args.input_file = Some(input_file);
 
-    // Prompt for voice selection (OpenAI only; ElevenLabs uses voice_id)
+    // Prompt for voice selection (OpenAI only; ElevenLabs uses voice_id, Custom prompts string)
     match provider {
-        TtsProvider::OpenAI | TtsProvider::Custom => {
+        TtsProvider::OpenAI => {
             let voices = vec![
-                "Echo - Clear and professional, ideal for announcements.",
-                "Fable - Warm and engaging, perfect for storytelling.",
-                "Onyx - Deep and authoritative.",
-                "Nova - Young and energetic.",
-                "Shimmer - Soft and soothing.",
                 "Alloy - Versatile and well-balanced.",
                 "Ash - Clear and conversational.",
+                "Ballad - Warm and engaging.",
+                "Cedar - Clear and measured.",
                 "Coral - Warm and friendly.",
+                "Echo - Clear and professional, ideal for announcements.",
+                "Fable - Warm and engaging, perfect for storytelling.",
+                "Marin - Calm and measured.",
+                "Nova - Young and energetic.",
+                "Onyx - Deep and authoritative.",
                 "Sage - Calm and measured.",
+                "Shimmer - Soft and soothing.",
+                "Verse - Dynamic and expressive.",
             ];
             if args.voice.to_lowercase() == "alloy" {
                 // Only prompt if default is used (case-insensitive comparison)
                 let selection = Select::new()
                     .with_prompt("Select a voice")
                     .items(&voices)
-                    .default(5) // Set default index for Alloy
+                    .default(0) // Set default index for Alloy
                     .interact()?;
                 // Extract only the voice name before the hyphen
                 args.voice = voices[selection]
@@ -267,6 +271,18 @@ async fn main() -> Result<()> {
                     .unwrap_or("alloy")
                     .to_lowercase()
                     .to_string();
+            }
+        }
+        TtsProvider::Custom => {
+            if args.voice.to_lowercase() == "alloy" {
+                let input: String = Input::new()
+                    .with_prompt("Enter the custom voice name (or press Enter to use default 'alloy')")
+                    .allow_empty(true)
+                    .interact_text()
+                    .unwrap_or_default();
+                if !input.is_empty() {
+                    args.voice = input;
+                }
             }
         }
         TtsProvider::ElevenLabs => {
@@ -864,7 +880,7 @@ fn remove_tmp(output_dir: &Path, format: &str, timestamp: &str, voice: &str) -> 
 }
 
 #[cfg(test)]
-mod tests {
+mod format_tests {
     use super::{encoder_for_format, format_to_extension, preview_prefix};
 
     #[test]

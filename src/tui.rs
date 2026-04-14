@@ -28,6 +28,7 @@ enum FocusedField {
     ApiKey,
     // Custom specific fields
     CustomEndpointUrl,
+    CustomVoice,
     // ElevenLabs specific fields
     ElevenLabsVoiceId,
     ElevenLabsModel,
@@ -47,6 +48,7 @@ pub struct TuiApp {
     speed: String,
     api_key: String,
     custom_endpoint_url: String,
+    custom_voice: String,
     elevenlabs_voice_id: String,
     elevenlabs_model: String,
     stability: String,
@@ -80,12 +82,13 @@ impl TuiApp {
             fields,
             input_file: String::new(),
             provider: 0,
-            voice: 5, // Default to Alloy
+            voice: 0, // Default to Alloy
             model: "tts-1-hd".to_string(),
             format: 1, // Default to flac for OpenAI
             speed: "1.0".to_string(),
             api_key: String::new(),
             custom_endpoint_url: "http://localhost:1234/v1/audio/speech".to_string(),
+            custom_voice: String::new(),
             elevenlabs_voice_id: String::new(),
             elevenlabs_model: "eleven_turbo_v2_5".to_string(),
             stability: "0.5".to_string(),
@@ -131,7 +134,7 @@ impl TuiApp {
                 FocusedField::InputFile,
                 FocusedField::CreateTextFile,
                 FocusedField::CustomEndpointUrl,
-                FocusedField::Voice,
+                FocusedField::CustomVoice,
                 FocusedField::Model,
                 FocusedField::Format,
                 FocusedField::Speed,
@@ -183,6 +186,7 @@ impl TuiApp {
             FocusedField::Speed => &self.speed,
             FocusedField::ApiKey => &self.api_key,
             FocusedField::CustomEndpointUrl => &self.custom_endpoint_url,
+            FocusedField::CustomVoice => &self.custom_voice,
             FocusedField::ElevenLabsVoiceId => &self.elevenlabs_voice_id,
             FocusedField::ElevenLabsModel => &self.elevenlabs_model,
             FocusedField::Stability => &self.stability,
@@ -200,6 +204,7 @@ impl TuiApp {
                 FocusedField::Speed => self.speed = text,
                 FocusedField::ApiKey => self.api_key = text,
                 FocusedField::CustomEndpointUrl => self.custom_endpoint_url = text,
+                FocusedField::CustomVoice => self.custom_voice = text,
                 FocusedField::ElevenLabsVoiceId => self.elevenlabs_voice_id = text,
                 FocusedField::ElevenLabsModel => self.elevenlabs_model = text,
                 FocusedField::Stability => self.stability = text,
@@ -221,7 +226,7 @@ impl TuiApp {
                 };
                 self.update_fields();
             }
-            FocusedField::Voice if self.provider == 0 || self.provider == 2 => {
+            FocusedField::Voice if self.provider == 0 => {
                 let voices = get_openai_voices();
                 self.voice = if is_right {
                     (self.voice + 1) % voices.len()
@@ -254,12 +259,18 @@ impl TuiApp {
             "custom".to_string()
         };
 
-        let voice = if self.provider == 0 || self.provider == 2 {
+        let voice = if self.provider == 0 {
             get_openai_voices()[self.voice]
                 .split(" - ")
                 .next()
                 .unwrap()
                 .to_lowercase()
+        } else if self.provider == 2 {
+            if self.custom_voice.trim().is_empty() {
+                "alloy".to_string()
+            } else {
+                self.custom_voice.clone()
+            }
         } else {
             String::new()
         };
@@ -315,15 +326,19 @@ impl TuiApp {
 
 fn get_openai_voices() -> Vec<&'static str> {
     vec![
-        "Echo - Clear and professional, ideal for announcements",
-        "Fable - Warm and engaging, perfect for storytelling",
-        "Onyx - Deep and authoritative",
-        "Nova - Young and energetic",
-        "Shimmer - Soft and soothing",
         "Alloy - Versatile and well-balanced",
         "Ash - Clear and conversational",
+        "Ballad - Warm and engaging",
+        "Cedar - Clear and measured",
         "Coral - Warm and friendly",
+        "Echo - Clear and professional, ideal for announcements",
+        "Fable - Warm and engaging, perfect for storytelling",
+        "Marin - Calm and measured",
+        "Nova - Young and energetic",
+        "Onyx - Deep and authoritative",
         "Sage - Calm and measured",
+        "Shimmer - Soft and soothing",
+        "Verse - Dynamic and expressive",
     ]
 }
 
@@ -608,7 +623,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         chunk_idx += 1;
     }
 
-    // Voice selector for OpenAI-compatible providers (including Custom)
+    // Voice selector for OpenAI providers
     if app.fields.contains(&FocusedField::Voice) {
         let voices = get_openai_voices();
         let voice_text = voices[app.voice];
@@ -627,6 +642,24 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
                 .title("Voice Selection"),
         );
         f.render_widget(voice, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
+    // Custom Voice
+    if app.fields.contains(&FocusedField::CustomVoice) {
+        let text = editing_text(app, &FocusedField::CustomVoice, &app.custom_voice);
+        let display_text = if text.is_empty() {
+            "[Press Enter to enter custom voice name, default: alloy]".to_string()
+        } else {
+            text
+        };
+        let style = field_style(app.focused_field == FocusedField::CustomVoice, Color::Magenta);
+        let custom_voice = Paragraph::new(display_text).style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Custom Voice (Press Enter to edit)"),
+        );
+        f.render_widget(custom_voice, form_chunks[chunk_idx]);
         chunk_idx += 1;
     }
 
@@ -819,7 +852,7 @@ mod tests {
     fn test_tui_app_new() {
         let app = TuiApp::new();
         assert_eq!(app.provider, 0);
-        assert_eq!(app.voice, 5);
+        assert_eq!(app.voice, 0); // Default to Alloy, now index 0
         assert_eq!(app.model, "tts-1-hd");
         assert_eq!(app.format, 1);
         assert_eq!(app.speed, "1.0");
@@ -892,6 +925,7 @@ mod tests {
         let mut app = TuiApp::new();
         app.input_file = "test.txt".to_string();
         app.api_key = "test_key".to_string();
+        app.voice = 0; // Alloy is now at index 0
 
         let args = app.to_args().unwrap();
         assert_eq!(args.input_file, Some("test.txt".to_string()));
@@ -916,8 +950,8 @@ mod tests {
     #[test]
     fn test_get_openai_voices() {
         let voices = get_openai_voices();
-        assert_eq!(voices.len(), 9);
-        assert!(voices[5].contains("Alloy"));
+        assert_eq!(voices.len(), 13);
+        assert!(voices[0].contains("Alloy"));
     }
 
     #[test]
