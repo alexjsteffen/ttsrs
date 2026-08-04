@@ -4,14 +4,14 @@
 [![Rust](https://img.shields.io/badge/Rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
 [![GitHub Release](https://img.shields.io/github/v/release/alexjsteffen/ttsrs)](https://github.com/alexjsteffen/ttsrs/releases)
 
-A fast, feature-rich command-line tool for converting text to speech using [OpenAI](https://platform.openai.com/docs/guides/text-to-speech) or [ElevenLabs](https://elevenlabs.io/) APIs. Includes an interactive TUI and a built-in Vim-inspired text editor.
+A fast, feature-rich command-line tool for converting text to speech using [OpenAI](https://platform.openai.com/docs/guides/text-to-speech), [ElevenLabs](https://elevenlabs.io/), [OpenRouter](https://openrouter.ai/models?output_modalities=speech), or custom APIs. Includes an interactive TUI and a built-in Vim-inspired text editor.
 
 ## Features
 
 - Easy-to-use command-line interface with sensible defaults
 - Interactive TUI (Terminal User Interface) for guided configuration
 - Built-in Vim-inspired text editor for creating input files on the fly
-- High-quality TTS via OpenAI, ElevenLabs, or custom endpoints
+- High-quality TTS via OpenAI, ElevenLabs, OpenRouter, or custom endpoints
 - Automatic chunking for large text files
 - Multiple voice options and audio formats per provider
 - Adjustable speaking speed (OpenAI) and voice settings (ElevenLabs)
@@ -22,7 +22,7 @@ A fast, feature-rich command-line tool for converting text to speech using [Open
 ## Prerequisites
 
 - [Rust](https://www.rust-lang.org/tools/install) (1.70+) — only needed when building from source
-- An API key for [OpenAI](https://platform.openai.com/api-keys) or [ElevenLabs](https://elevenlabs.io/)
+- An API key for [OpenAI](https://platform.openai.com/api-keys), [ElevenLabs](https://elevenlabs.io/), or [OpenRouter](https://openrouter.ai/settings/keys)
 
 ## Installation
 
@@ -71,7 +71,7 @@ ttsrs
 
 The TUI lets you:
 
-- Select a TTS provider (OpenAI / ElevenLabs)
+- Select a TTS provider (OpenAI / ElevenLabs / OpenRouter / Custom)
 - Enter or browse for an input file path
 - Create text files using the built-in editor
 - Choose voice, model, and format with arrow keys
@@ -106,7 +106,7 @@ ttsrs [OPTIONS] [INPUT_FILE]
 | `INPUT_FILE` | Path to the input text file | _(prompted)_ |
 | `--cli` | Use classic command-line flow instead of TUI | `false` |
 | `--tui` | Force interactive TUI mode | `true` when `--cli` is not used |
-| `--provider` | TTS provider (`openai`, `elevenlabs`, or `custom`) | `openai` |
+| `--provider` | TTS provider (`openai`, `elevenlabs`, `openrouter`, or `custom`) | `openai` |
 | `-m`, `--model` | TTS model | `tts-1-hd` |
 | `-v`, `--voice` | Voice name (OpenAI only) | `alloy` |
 | `-f`, `--format` | Output audio format | `flac` (OpenAI) |
@@ -148,6 +148,10 @@ curl https://api.elevenlabs.io/v1/voices -H "xi-api-key: YOUR_KEY"
 
 Pass the voice ID with `--elevenlabs-voice-id`.
 
+#### OpenRouter Voices
+
+OpenRouter voice identifiers are provider-specific. Browse available TTS models and their supported voices at [OpenRouter TTS Models](https://openrouter.ai/models?output_modalities=speech). Pass the voice identifier with `--voice` (e.g., `en_paul_neutral` for Voxtral).
+
 ### Audio Formats
 
 #### OpenAI
@@ -157,6 +161,10 @@ Pass the voice ID with `--elevenlabs-voice-id`.
 #### ElevenLabs
 
 `mp3_44100_64` · `mp3_44100_96` · `mp3_44100_128` (default) · `mp3_44100_192` · `pcm_16000` · `pcm_22050` · `pcm_24000` · `pcm_44100` · `ulaw_8000`
+
+#### OpenRouter
+
+`mp3` (default) · `pcm`
 
 ## Examples
 
@@ -187,6 +195,22 @@ ttsrs --cli --provider custom --endpoint-url "http://localhost:1234/v1/audio/spe
 ttsrs --cli --provider custom --endpoint-url "http://localhost:1234/v1/audio/speech" --voice "my_custom_voice_name" --format wav input.txt
 ```
 
+### OpenRouter
+
+Browse available TTS models at [openrouter.ai/models?output_modalities=speech](https://openrouter.ai/models?output_modalities=speech).
+
+```bash
+# Interactive mode
+ttsrs # Select 'OpenRouter' as provider, then enter your voice and model
+
+# Classic CLI mode — uses Voxtral Mini with default voice
+ttsrs --cli --provider openrouter --apikey sk-or-... \
+  --model mistralai/voxtral-mini-tts-2603 \
+  --voice en_paul_neutral \
+  --format mp3 \
+  input.txt
+```
+
 ### ElevenLabs
 
 ```bash
@@ -207,7 +231,7 @@ ttsrs --cli --provider elevenlabs \
 
 - Use the default TUI (`ttsrs`) for discoverability and fewer mistakes when switching providers/settings.
 - Use `--cli` for scripting and automation so runs are deterministic and non-interactive.
-- Prefer environment variables for API keys in CI/CD (`OPENAI_API_KEY`, `ELEVENLABS_API_KEY`) instead of prompts.
+- Prefer environment variables for API keys in CI/CD (`OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `OPENROUTER_API_KEY`) instead of prompts.
 - Pin explicit output settings in scripts (`--provider`, `--voice`, `--format`, `--model`) to avoid accidental default changes.
 
 ## Configuration
@@ -215,7 +239,7 @@ ttsrs --cli --provider elevenlabs \
 ### API Key Resolution Order
 
 1. `--apikey` flag
-2. Environment variable (`OPENAI_API_KEY` or `ELEVENLABS_API_KEY`)
+2. Environment variable (`OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, or `OPENROUTER_API_KEY`)
 3. Configuration file (`.ttsrs_config.json` in the current directory)
 4. Interactive prompt (saves the key to the config file for future use)
 
@@ -226,7 +250,8 @@ When you provide an API key via the interactive prompt, it is saved to `.ttsrs_c
 ```json
 {
   "openai_api_key": "sk-...",
-  "elevenlabs_api_key": "..."
+  "elevenlabs_api_key": "...",
+  "openrouter_api_key": "sk-or-..."
 }
 ```
 

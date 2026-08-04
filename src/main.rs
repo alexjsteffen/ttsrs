@@ -22,6 +22,7 @@ mod tui;
 enum TtsProvider {
     OpenAI,
     ElevenLabs,
+    OpenRouter,
     Custom,
 }
 
@@ -30,6 +31,7 @@ impl fmt::Display for TtsProvider {
         match self {
             TtsProvider::OpenAI => write!(f, "openai"),
             TtsProvider::ElevenLabs => write!(f, "elevenlabs"),
+            TtsProvider::OpenRouter => write!(f, "openrouter"),
             TtsProvider::Custom => write!(f, "custom"),
         }
     }
@@ -42,9 +44,10 @@ impl FromStr for TtsProvider {
         match s.to_lowercase().as_str() {
             "openai" => Ok(TtsProvider::OpenAI),
             "elevenlabs" => Ok(TtsProvider::ElevenLabs),
+            "openrouter" => Ok(TtsProvider::OpenRouter),
             "custom" => Ok(TtsProvider::Custom),
             other => anyhow::bail!(
-                "Invalid provider '{}'. Must be 'openai', 'elevenlabs', or 'custom'",
+                "Invalid provider '{}'. Must be 'openai', 'elevenlabs', 'openrouter', or 'custom'",
                 other
             ),
         }
@@ -55,6 +58,7 @@ impl FromStr for TtsProvider {
 struct Config {
     openai_api_key: Option<String>,
     elevenlabs_api_key: Option<String>,
+    openrouter_api_key: Option<String>,
 }
 
 impl Config {
@@ -85,6 +89,7 @@ impl Config {
         match provider {
             TtsProvider::OpenAI => self.openai_api_key.as_ref(),
             TtsProvider::ElevenLabs => self.elevenlabs_api_key.as_ref(),
+            TtsProvider::OpenRouter => self.openrouter_api_key.as_ref(),
             _ => None,
         }
     }
@@ -93,6 +98,7 @@ impl Config {
         match provider {
             TtsProvider::OpenAI => self.openai_api_key = Some(api_key),
             TtsProvider::ElevenLabs => self.elevenlabs_api_key = Some(api_key),
+            TtsProvider::OpenRouter => self.openrouter_api_key = Some(api_key),
             _ => {}
         }
     }
@@ -103,7 +109,7 @@ impl Config {
 #[command(
     author,
     version,
-    about = "Text-to-speech CLI using OpenAI or ElevenLabs APIs"
+    about = "Text-to-speech CLI using OpenAI, ElevenLabs, OpenRouter, or custom APIs"
 )]
 struct Args {
     /// Use classic command-line mode (default launches interactive TUI)
@@ -130,7 +136,7 @@ struct Args {
     #[arg(long, default_value = "1.0")]
     speed: f32,
 
-    /// API key (can also be set via OPENAI_API_KEY or ELEVENLABS_API_KEY env vars)
+    /// API key (can also be set via OPENAI_API_KEY, ELEVENLABS_API_KEY, or OPENROUTER_API_KEY env vars)
     #[arg(short, long)]
     apikey: Option<String>,
 
@@ -188,6 +194,7 @@ async fn main() -> Result<()> {
         .or_else(|| match provider {
             TtsProvider::OpenAI => std::env::var("OPENAI_API_KEY").ok(),
             TtsProvider::ElevenLabs => std::env::var("ELEVENLABS_API_KEY").ok(),
+            TtsProvider::OpenRouter => std::env::var("OPENROUTER_API_KEY").ok(),
             TtsProvider::Custom => None,
         })
         .or_else(|| config.get_api_key(&provider).cloned())
@@ -195,6 +202,7 @@ async fn main() -> Result<()> {
             let prompt = match provider {
                 TtsProvider::OpenAI => "Enter your OpenAI API Key",
                 TtsProvider::ElevenLabs => "Enter your ElevenLabs API Key",
+                TtsProvider::OpenRouter => "Enter your OpenRouter API Key",
                 TtsProvider::Custom => "Enter your Custom API Key (or press Enter to skip)",
             };
 
@@ -239,7 +247,7 @@ async fn main() -> Result<()> {
 
     args.input_file = Some(input_file);
 
-    // Prompt for voice selection (OpenAI only; ElevenLabs uses voice_id, Custom prompts string)
+    // Prompt for voice selection (OpenAI only; ElevenLabs uses voice_id, OpenRouter uses free-text voice, Custom prompts string)
     match provider {
         TtsProvider::OpenAI => {
             let voices = vec![
@@ -273,6 +281,20 @@ async fn main() -> Result<()> {
                     .to_string();
             }
         }
+        TtsProvider::OpenRouter => {
+            if args.voice.to_lowercase() == "alloy" {
+                let input: String = Input::new()
+                    .with_prompt("Enter the OpenRouter voice identifier (or press Enter to use default 'en_paul_neutral')")
+                    .allow_empty(true)
+                    .interact_text()
+                    .unwrap_or_default();
+                if !input.is_empty() {
+                    args.voice = input;
+                } else {
+                    args.voice = "en_paul_neutral".to_string();
+                }
+            }
+        }
         TtsProvider::Custom => {
             if args.voice.to_lowercase() == "alloy" {
                 let input: String = Input::new()
@@ -299,6 +321,7 @@ async fn main() -> Result<()> {
     // Prompt for output format
     let formats = match provider {
         TtsProvider::OpenAI | TtsProvider::Custom => vec!["mp3", "flac", "wav", "pcm", "opus", "aac"],
+        TtsProvider::OpenRouter => vec!["mp3", "pcm"],
         TtsProvider::ElevenLabs => vec![
             "mp3_44100_128",
             "mp3_44100_192",
@@ -314,8 +337,14 @@ async fn main() -> Result<()> {
         args.format = "mp3_44100_128".to_string();
     }
 
+    // For OpenRouter, set default format if using the OpenAI default
+    if provider == TtsProvider::OpenRouter && args.format.to_lowercase() == "flac" {
+        args.format = "mp3".to_string();
+    }
+
     if ((provider == TtsProvider::OpenAI || provider == TtsProvider::Custom) && args.format.to_lowercase() == "flac")
         || (provider == TtsProvider::ElevenLabs && args.format == "mp3_44100_128")
+        || (provider == TtsProvider::OpenRouter && args.format == "mp3")
     {
         // Only prompt if default is used
         let default_idx = if provider == TtsProvider::OpenAI || provider == TtsProvider::Custom {
@@ -356,6 +385,7 @@ async fn main() -> Result<()> {
     } else {
         match provider {
             TtsProvider::OpenAI => "https://api.openai.com/v1/audio/speech".to_string(),
+            TtsProvider::OpenRouter => "https://openrouter.ai/api/v1/audio/speech".to_string(),
             TtsProvider::Custom => {
                 let input: String = Input::new()
                     .with_prompt("Enter the custom API endpoint URL")
@@ -658,6 +688,22 @@ async fn generate_audio_files(
                     (
                         "Authorization".to_string(),
                         auth_value,
+                    ),
+                )
+            }
+            TtsProvider::OpenRouter => {
+                let body = serde_json::json!({
+                    "model": config.model,
+                    "voice": voice_lowercase,
+                    "input": chunk_string,
+                    "speed": config.speed,
+                    "response_format": config.format,
+                });
+                (
+                    body,
+                    (
+                        "Authorization".to_string(),
+                        format!("Bearer {}", config.api_key),
                     ),
                 )
             }

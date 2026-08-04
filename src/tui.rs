@@ -26,6 +26,8 @@ enum FocusedField {
     Format,
     Speed,
     ApiKey,
+    // OpenRouter specific fields
+    OpenRouterVoice,
     // Custom specific fields
     CustomEndpointUrl,
     CustomVoice,
@@ -41,12 +43,13 @@ pub struct TuiApp {
     focused_field: FocusedField,
     fields: Vec<FocusedField>,
     input_file: String,
-    provider: usize, // 0 = OpenAI, 1 = ElevenLabs, 2 = Custom
+    provider: usize, // 0 = OpenAI, 1 = ElevenLabs, 2 = OpenRouter, 3 = Custom
     voice: usize,
     model: String,
     format: usize,
     speed: String,
     api_key: String,
+    openrouter_voice: String,
     custom_endpoint_url: String,
     custom_voice: String,
     elevenlabs_voice_id: String,
@@ -87,6 +90,7 @@ impl TuiApp {
             format: 1, // Default to flac for OpenAI
             speed: "1.0".to_string(),
             api_key: String::new(),
+            openrouter_voice: "en_paul_neutral".to_string(),
             custom_endpoint_url: "http://localhost:1234/v1/audio/speech".to_string(),
             custom_voice: String::new(),
             elevenlabs_voice_id: String::new(),
@@ -124,6 +128,19 @@ impl TuiApp {
                 FocusedField::Format,
                 FocusedField::Stability,
                 FocusedField::Similarity,
+                FocusedField::ApiKey,
+                FocusedField::Submit,
+            ]
+        } else if self.provider == 2 {
+            // OpenRouter
+            vec![
+                FocusedField::Provider,
+                FocusedField::InputFile,
+                FocusedField::CreateTextFile,
+                FocusedField::OpenRouterVoice,
+                FocusedField::Model,
+                FocusedField::Format,
+                FocusedField::Speed,
                 FocusedField::ApiKey,
                 FocusedField::Submit,
             ]
@@ -185,6 +202,7 @@ impl TuiApp {
             FocusedField::Model => &self.model,
             FocusedField::Speed => &self.speed,
             FocusedField::ApiKey => &self.api_key,
+            FocusedField::OpenRouterVoice => &self.openrouter_voice,
             FocusedField::CustomEndpointUrl => &self.custom_endpoint_url,
             FocusedField::CustomVoice => &self.custom_voice,
             FocusedField::ElevenLabsVoiceId => &self.elevenlabs_voice_id,
@@ -203,6 +221,7 @@ impl TuiApp {
                 FocusedField::Model => self.model = text,
                 FocusedField::Speed => self.speed = text,
                 FocusedField::ApiKey => self.api_key = text,
+                FocusedField::OpenRouterVoice => self.openrouter_voice = text,
                 FocusedField::CustomEndpointUrl => self.custom_endpoint_url = text,
                 FocusedField::CustomVoice => self.custom_voice = text,
                 FocusedField::ElevenLabsVoiceId => self.elevenlabs_voice_id = text,
@@ -218,9 +237,9 @@ impl TuiApp {
         match self.focused_field {
             FocusedField::Provider => {
                 self.provider = if is_right {
-                    (self.provider + 1) % 3
+                    (self.provider + 1) % 4
                 } else if self.provider == 0 {
-                    2
+                    3
                 } else {
                     self.provider - 1
                 };
@@ -255,6 +274,8 @@ impl TuiApp {
             "openai".to_string()
         } else if self.provider == 1 {
             "elevenlabs".to_string()
+        } else if self.provider == 2 {
+            "openrouter".to_string()
         } else {
             "custom".to_string()
         };
@@ -266,6 +287,12 @@ impl TuiApp {
                 .unwrap()
                 .to_lowercase()
         } else if self.provider == 2 {
+            if self.openrouter_voice.trim().is_empty() {
+                "en_paul_neutral".to_string()
+            } else {
+                self.openrouter_voice.clone()
+            }
+        } else if self.provider == 3 {
             if self.custom_voice.trim().is_empty() {
                 "alloy".to_string()
             } else {
@@ -305,7 +332,7 @@ impl TuiApp {
             } else {
                 Some(self.api_key.clone())
             },
-            endpoint_url: if self.provider == 2 && !self.custom_endpoint_url.trim().is_empty() {
+            endpoint_url: if self.provider == 3 && !self.custom_endpoint_url.trim().is_empty() {
                 Some(self.custom_endpoint_url.clone())
             } else {
                 None
@@ -343,9 +370,14 @@ fn get_openai_voices() -> Vec<&'static str> {
 }
 
 fn get_formats(provider: usize) -> Vec<&'static str> {
-    if provider == 0 || provider == 2 {
+    if provider == 0 || provider == 3 {
+        // OpenAI and Custom: full format list
         vec!["mp3", "flac", "wav", "pcm", "opus", "aac"]
+    } else if provider == 2 {
+        // OpenRouter: mp3 and pcm only
+        vec!["mp3", "pcm"]
     } else {
+        // ElevenLabs
         vec![
             "mp3_44100_128",
             "mp3_44100_192",
@@ -562,11 +594,13 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
             "OpenAI"
         } else if app.provider == 1 {
             "ElevenLabs"
+        } else if app.provider == 2 {
+            "OpenRouter"
         } else {
             "Custom"
         };
         let style = field_style(app.focused_field == FocusedField::Provider, Color::Cyan);
-        let provider = Paragraph::new(format!("{}  [Options: OpenAI, ElevenLabs, Custom]", provider_text))
+        let provider = Paragraph::new(format!("{}  [Options: OpenAI, ElevenLabs, OpenRouter, Custom]", provider_text))
             .style(style)
             .block(
                 Block::default()
@@ -623,6 +657,24 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         chunk_idx += 1;
     }
 
+    // OpenRouter Voice
+    if app.fields.contains(&FocusedField::OpenRouterVoice) {
+        let text = editing_text(app, &FocusedField::OpenRouterVoice, &app.openrouter_voice);
+        let display_text = if text.is_empty() {
+            "[Press Enter to enter voice identifier, default: en_paul_neutral]".to_string()
+        } else {
+            text
+        };
+        let style = field_style(app.focused_field == FocusedField::OpenRouterVoice, Color::Magenta);
+        let or_voice = Paragraph::new(display_text).style(style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("OpenRouter Voice (Press Enter to edit, e.g., en_paul_neutral)"),
+        );
+        f.render_widget(or_voice, form_chunks[chunk_idx]);
+        chunk_idx += 1;
+    }
+
     // Voice selector for OpenAI providers
     if app.fields.contains(&FocusedField::Voice) {
         let voices = get_openai_voices();
@@ -670,7 +722,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         let model = Paragraph::new(text).style(style).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("TTS Model (Press Enter to edit, e.g., tts-1, tts-1-hd)"),
+                .title("TTS Model (Press Enter to edit, e.g., tts-1-hd, mistralai/voxtral-mini-tts-2603)"),
         );
         f.render_widget(model, form_chunks[chunk_idx]);
         chunk_idx += 1;
@@ -682,8 +734,10 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
         let format_text = formats[app.format];
         let format_count = formats.len();
         let style = field_style(app.focused_field == FocusedField::Format, Color::Blue);
-        let format_opts = if app.provider == 0 || app.provider == 2 {
+        let format_opts = if app.provider == 0 || app.provider == 3 {
             "mp3, flac, wav, pcm, opus, aac"
+        } else if app.provider == 2 {
+            "mp3, pcm"
         } else {
             "mp3_44100_128/192, pcm_16000/22050/24000/44100"
         };
@@ -796,7 +850,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
             "*".repeat(app.api_key.len())
         };
         let display_text = if masked_text.is_empty() {
-            if app.provider == 2 {
+            if app.provider == 3 {
                 "[Press Enter to enter API key - Optional for Custom endpoints]".to_string()
             } else {
                 "[Press Enter to enter your API key securely]".to_string()
@@ -805,7 +859,7 @@ fn ui(f: &mut Frame, app: &mut TuiApp) {
             masked_text
         };
         let style = field_style(app.focused_field == FocusedField::ApiKey, Color::Red);
-        let title_text = if app.provider == 2 {
+        let title_text = if app.provider == 3 {
             "API Key (Optional for some custom endpoints)"
         } else {
             "API Key (Required - will be saved to config file)"
@@ -877,6 +931,15 @@ mod tests {
         assert!(app.fields.contains(&FocusedField::CreateTextFile));
         assert!(app.fields.contains(&FocusedField::ElevenLabsVoiceId));
         assert!(!app.fields.contains(&FocusedField::Voice));
+
+        // Switch to OpenRouter
+        app.provider = 2;
+        app.update_fields();
+        // Verify OpenRouter specific fields are present
+        assert!(app.fields.contains(&FocusedField::OpenRouterVoice));
+        assert!(app.fields.contains(&FocusedField::Model));
+        assert!(!app.fields.contains(&FocusedField::Voice));
+        assert!(!app.fields.contains(&FocusedField::ElevenLabsVoiceId));
     }
 
     #[test]
@@ -963,6 +1026,15 @@ mod tests {
         let elevenlabs_formats = get_formats(1);
         assert_eq!(elevenlabs_formats.len(), 6);
         assert!(elevenlabs_formats.contains(&"mp3_44100_128"));
+
+        let openrouter_formats = get_formats(2);
+        assert_eq!(openrouter_formats.len(), 2);
+        assert!(openrouter_formats.contains(&"mp3"));
+        assert!(openrouter_formats.contains(&"pcm"));
+
+        let custom_formats = get_formats(3);
+        assert_eq!(custom_formats.len(), 6);
+        assert!(custom_formats.contains(&"flac"));
     }
 
     #[test]
@@ -977,11 +1049,14 @@ mod tests {
         app.handle_left_right(true); // Right again
         assert_eq!(app.provider, 2);
 
+        app.handle_left_right(true); // Right again
+        assert_eq!(app.provider, 3);
+
         app.handle_left_right(true); // Right again (should wrap)
         assert_eq!(app.provider, 0);
 
         app.handle_left_right(false); // Left
-        assert_eq!(app.provider, 2);
+        assert_eq!(app.provider, 3);
     }
 
     #[test]
