@@ -166,6 +166,8 @@ OpenRouter voice identifiers are provider-specific. Browse available TTS models 
 
 `mp3` (default) · `pcm`
 
+PCM chunks are combined into `output.mp3`. Each response must provide positive `rate` and `channels` parameters in `Content-Type: audio/pcm;rate=44100;channels=1`, and they must match across chunks. If the parameters are missing or invalid, ttsrs stops without invoking FFmpeg and keeps the downloaded chunks.
+
 ## Examples
 
 ### OpenAI

@@ -413,7 +413,7 @@ async fn main() -> Result<()> {
         elevenlabs_similarity: args.elevenlabs_similarity,
     };
 
-    let (timestamp, voice_used) =
+    let (timestamp, voice_used, pcm_parameters) =
         generate_audio_files(&chunks, &output_dir, &client, &gen_config).await?;
 
     println!(
@@ -422,11 +422,18 @@ async fn main() -> Result<()> {
         green_text(input_file_name)
     );
 
-    let output_ext = format_to_extension(&args.format);
+    let input_ext = format_to_extension(&args.format);
+    let output_ext = if input_ext == "pcm" { "mp3" } else { input_ext };
 
-    combine_audio_files(&output_dir, output_ext, &timestamp, &voice_used)?;
+    combine_audio_files(
+        &output_dir,
+        input_ext,
+        &timestamp,
+        &voice_used,
+        pcm_parameters,
+    )?;
 
-    remove_tmp(&output_dir, output_ext, &timestamp, &voice_used)?;
+    remove_tmp(&output_dir, input_ext, &timestamp, &voice_used)?;
 
     println!(
         "\nThe File [ {}/output.{} ] is ready for you. \n",
@@ -612,6 +619,62 @@ fn preview_prefix(input: &str, max_chars: usize) -> String {
     input.chars().take(max_chars).collect()
 }
 
+const PCM_PARAMETER_ERROR: &str = "PCM parameters could not be found or accurately parsed from Content-Type; ffmpeg cannot be called to produce mp3.";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PcmParameters {
+    sample_rate: u32,
+    channels: u32,
+}
+
+impl PcmParameters {
+    fn from_content_type(content_type: Option<&str>) -> Result<Self> {
+        let invalid = || anyhow::anyhow!(PCM_PARAMETER_ERROR);
+        let mut parts = content_type.ok_or_else(invalid)?.split(';');
+        if !parts
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .eq_ignore_ascii_case("audio/pcm")
+        {
+            return Err(invalid());
+        }
+
+        let mut sample_rate = None;
+        let mut channels = None;
+        for part in parts {
+            let (name, value) = part.trim().split_once('=').ok_or_else(invalid)?;
+            let value = value.trim();
+            let value = if let Some(quoted) = value.strip_prefix('"') {
+                quoted.strip_suffix('"').ok_or_else(invalid)?
+            } else {
+                value
+            };
+            let target = match name.trim().to_ascii_lowercase().as_str() {
+                "rate" => &mut sample_rate,
+                "channels" => &mut channels,
+                _ => continue,
+            };
+            if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(invalid());
+            }
+            let number = value
+                .parse::<u32>()
+                .ok()
+                .filter(|n| *n > 0 && *n <= i32::MAX as u32)
+                .ok_or_else(invalid)?;
+            if target.replace(number).is_some() {
+                return Err(invalid());
+            }
+        }
+
+        Ok(Self {
+            sample_rate: sample_rate.ok_or_else(invalid)?,
+            channels: channels.ok_or_else(invalid)?,
+        })
+    }
+}
+
 /// Configuration for audio generation, grouping all parameters needed by the TTS API call.
 struct AudioGenConfig<'a> {
     model: &'a str,
@@ -627,13 +690,14 @@ struct AudioGenConfig<'a> {
 }
 
 /// Generates audio files for each chunk of text using the specified API endpoint.
-/// Returns `(timestamp, voice_lowercase)` for identifying the generated files.
+/// Returns the file identifiers and validated PCM parameters, when applicable.
 async fn generate_audio_files(
     chunks: &[String],
     output_dir: &Path,
     client: &Client,
     config: &AudioGenConfig<'_>,
-) -> Result<(String, String)> {
+) -> Result<(String, String, Option<PcmParameters>)> {
+    let mut pcm_parameters = None;
     let date_time_string = Local::now().format("%Y%m%d%H%M%S").to_string();
     let voice_lowercase = config.voice.to_lowercase();
 
@@ -762,6 +826,17 @@ async fn generate_audio_files(
         }
 
         let file_ext = format_to_extension(config.format);
+        let chunk_pcm_parameters = (file_ext == "pcm").then(|| {
+            let mut headers = response
+                .headers()
+                .get_all(reqwest::header::CONTENT_TYPE)
+                .iter();
+            let content_type = headers.next().and_then(|value| value.to_str().ok());
+            if headers.next().is_some() {
+                anyhow::bail!(PCM_PARAMETER_ERROR);
+            }
+            PcmParameters::from_content_type(content_type)
+        });
         let file_name = format!(
             "tmp_{}_{}_chunk{:06}.{}",
             date_time_string,
@@ -783,16 +858,30 @@ async fn generate_audio_files(
                     .await
                     .context("Failed to write chunk to file")?;
             }
+            file.flush().await.context("Failed to flush audio file")?;
             Ok::<(), anyhow::Error>(())
         }
         .await;
 
         match file_result {
-            Ok(()) => pb.finish_with_message(format!(
-                "✅ Chunk {} audio saved as {}",
-                i + 1,
-                file_path.display()
-            )),
+            Ok(()) => {
+                pb.finish_with_message(format!(
+                    "✅ Chunk {} audio saved as {}",
+                    i + 1,
+                    file_path.display()
+                ));
+                // Save the audio before reporting invalid metadata so it can be recovered.
+                if let Some(parameters) = chunk_pcm_parameters {
+                    let parameters = parameters?;
+                    if let Some(previous) = pcm_parameters {
+                        anyhow::ensure!(
+                            previous == parameters,
+                            "PCM parameters differ between chunks; ffmpeg cannot be called to produce mp3."
+                        );
+                    }
+                    pcm_parameters = Some(parameters);
+                }
+            }
             Err(e) => {
                 pb.finish_with_message(format!("❌ Error saving audio for chunk {}: {}", i + 1, e));
                 if let Err(rm_err) = fs::remove_file(&file_path) {
@@ -806,7 +895,7 @@ async fn generate_audio_files(
         }
     }
 
-    Ok((date_time_string, voice_lowercase))
+    Ok((date_time_string, voice_lowercase, pcm_parameters))
 }
 
 /// Safely quotes a filename for use in an ffmpeg concat list file.
@@ -828,7 +917,13 @@ fn combine_audio_files(
     format: &str,
     timestamp: &str,
     voice: &str,
+    pcm_parameters: Option<PcmParameters>,
 ) -> Result<()> {
+    let pcm_parameters = if format == "pcm" {
+        Some(pcm_parameters.context(PCM_PARAMETER_ERROR)?)
+    } else {
+        None
+    };
     let mut input_files = Vec::new();
     let prefix = format!("tmp_{}_{}_", timestamp, voice);
     for entry in fs::read_dir(output_dir)? {
@@ -865,9 +960,17 @@ fn combine_audio_files(
 
     input_files.sort();
 
-    let list_file_path = output_dir.join("ffmpeg_list.txt");
-    {
-        let mut list_file = File::create(&list_file_path)?;
+    let input_file_path = if pcm_parameters.is_some() {
+        // Raw PCM can be joined byte-for-byte; the concat demuxer cannot probe it.
+        let path = output_dir.join("ffmpeg_input.pcm");
+        let mut joined = File::create(&path)?;
+        for input_file in &input_files {
+            std::io::copy(&mut File::open(input_file)?, &mut joined)?;
+        }
+        path
+    } else {
+        let path = output_dir.join("ffmpeg_list.txt");
+        let mut list_file = File::create(&path)?;
         for input_file in &input_files {
             let filename = input_file
                 .file_name()
@@ -875,10 +978,12 @@ fn combine_audio_files(
                 .context("Failed to get filename")?;
             writeln!(list_file, "file {}", quote_ffmpeg_filename(filename)?)?;
         }
-    }
+        path
+    };
 
-    let output_file_path = output_dir.join(format!("output.{}", format));
-    let encoder = encoder_for_format(format);
+    let output_format = if format == "pcm" { "mp3" } else { format };
+    let output_file_path = output_dir.join(format!("output.{}", output_format));
+    let encoder = encoder_for_format(output_format);
 
     println!("Checking for internal ffmpeg...");
     // Auto-download handles checking if it already exists and downloading if not
@@ -887,29 +992,34 @@ fn combine_audio_files(
         eprintln!("It will fallback to attempting to use a system-installed ffmpeg.");
     }
 
-    let ffmpeg_args = vec![
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        list_file_path.to_str().context("Invalid UTF-8 in list file path")?,
-        "-c:a",
-        encoder,
-        "-y",
-        output_file_path.to_str().context("Invalid UTF-8 in output file path")?,
-    ];
-
     println!("Running internal ffmpeg command...");
     let mut ffmpeg_command = FfmpegCommand::new();
-    ffmpeg_command.args(&ffmpeg_args);
+    if let Some(parameters) = pcm_parameters {
+        // OpenRouter's audio/pcm contract is signed 16-bit little-endian.
+        ffmpeg_command.args([
+            "-f",
+            "s16le",
+            "-ar",
+            &parameters.sample_rate.to_string(),
+            "-ac",
+            &parameters.channels.to_string(),
+            "-i",
+        ]);
+    } else {
+        ffmpeg_command.args(["-f", "concat", "-safe", "0", "-i"]);
+    }
+    ffmpeg_command
+        .as_inner_mut()
+        .arg(&input_file_path)
+        .args(["-c:a", encoder, "-y"])
+        .arg(&output_file_path);
 
     // Fallback to calling inner process output directly
     let ffmpeg_output = ffmpeg_command.as_inner_mut()
         .output()
         .context("Failed to execute ffmpeg command. Is ffmpeg available?")?;
 
-    let _ = fs::remove_file(&list_file_path);
+    let _ = fs::remove_file(&input_file_path);
 
     if !ffmpeg_output.status.success() {
         eprintln!(
@@ -1001,5 +1111,54 @@ mod format_tests {
         let text = "Lord Durham’s report – Québec et Montréal 😊";
         let preview = preview_prefix(text, 10);
         assert_eq!(preview, "Lord Durha");
+    }
+}
+
+#[cfg(test)]
+mod pcm_tests {
+    use super::{PcmParameters, PCM_PARAMETER_ERROR};
+
+    #[test]
+    fn parses_pcm_content_type_parameters() {
+        for (header, sample_rate, channels) in [
+            ("audio/pcm;rate=44100;channels=1", 44100, 1),
+            (" Audio/PCM ; CHANNELS = 2 ; RATE = 24000 ", 24000, 2),
+            ("audio/pcm;rate=\"48000\";channels=\"1\"", 48000, 1),
+        ] {
+            assert_eq!(
+                PcmParameters::from_content_type(Some(header)).unwrap(),
+                PcmParameters {
+                    sample_rate,
+                    channels
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_missing_malformed_or_ambiguous_pcm_parameters() {
+        let invalid = [
+            None,
+            Some("audio/pcm"),
+            Some("audio/mpeg;rate=44100;channels=1"),
+            Some("audio/pcm;channels=1"),
+            Some("audio/pcm;rate=44100"),
+            Some("audio/pcm;rate=0;channels=1"),
+            Some("audio/pcm;rate=44100;channels=0"),
+            Some("audio/pcm;rate=-44100;channels=1"),
+            Some("audio/pcm;rate=44100;channels=+1"),
+            Some("audio/pcm;rate=44.1kHz;channels=1"),
+            Some("audio/pcm;rate=44100;channels=mono"),
+            Some("audio/pcm;rate=2147483648;channels=1"),
+            Some("audio/pcm;rate=44100;channels=999999999999999"),
+            Some("audio/pcm;rate=44100;rate=24000;channels=1"),
+            Some("audio/pcm;rate=44100;channels=1;channels=1"),
+            Some("audio/pcm;rate=\"44100;channels=1"),
+            Some("audio/pcm;other=\"unfinished;rate=44100;channels=1"),
+        ];
+        for header in invalid {
+            let error = PcmParameters::from_content_type(header).unwrap_err();
+            assert_eq!(error.to_string(), PCM_PARAMETER_ERROR, "{header:?}");
+        }
     }
 }
